@@ -1,0 +1,9 @@
+version: v2
+clean: true
+
+plugins:
+  - protoc_builtin: cpp
+    protoc_path: "@VECLET_PROTOC_EXECUTABLE@"
+    out: .
+  - local: "@VECLET_GRPC_CPP_PLUGIN_EXECUTABLE@"
+    out: .
