@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package veclet.v1;
+
+import "veclet/v1/common.proto";
+
+option go_package = "github.com/sagar-arora/veclet/gen/go/veclet/v1;vecletv1";
+
+// QueryService is the client-facing vector search boundary.
+service QueryService {
+  // Search is read-only and safe to retry within the original deadline.
+  // Success is strict: every logical shard for one routing snapshot and
+  // generation contributed. V1 never returns silent partial results.
+  rpc Search(SearchRequest) returns (SearchResponse);
+}
+
+message SearchRequest {
+  // collection_id is the canonical collection identity.
+  string collection_id = 1;
+
+  // query_vector must match the collection dimension and contain only finite
+  // values. Cosine vectors are normalized by the query implementation.
+  repeated float query_vector = 2;
+
+  // k is in [1, 1000].
+  uint32 k = 3;
+}
+
+message SearchResponse {
+  // neighbors contains at most k entries in metric order. Equal scores are
+  // ordered by ascending vector_id.
+  repeated Neighbor neighbors = 1;
+
+  // generation_id identifies the collection generation used by every shard.
+  uint64 generation_id = 2;
+
+  // routing_epoch identifies the complete routing snapshot used for fan-out.
+  uint64 routing_epoch = 3;
+}

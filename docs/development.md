@@ -1,7 +1,7 @@
 # Development
 
-The foundation checks require Git, GNU Make, and Bash. They run on macOS for
-local development and Linux in CI without downloading project dependencies.
+The foundation checks require Git, GNU Make, and Bash. Protobuf checks require
+Buf 1.72.0. They run on macOS for local development and Linux in CI.
 
 ## Root commands
 
@@ -11,6 +11,8 @@ root.
 | Command | Purpose |
 | --- | --- |
 | `make check-docs` | Validate that local Markdown link targets exist. |
+| `make check-proto` | Verify the pinned Buf version, formatting, lint, and source build. |
+| `make check-proto-breaking` | Compare protobuf compatibility against local `main`. |
 | `make check-repository` | Reject missing structural files, trailing whitespace, and tracked build artifacts. |
 | `make check` | Run all checks available in the checkout. |
 | `make ci` | Run the same aggregate checks used by CI. |

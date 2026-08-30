@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package veclet.v1;
+
+import "veclet/v1/common.proto";
+
+option go_package = "github.com/sagar-arora/veclet/gen/go/veclet/v1;vecletv1";
+
+// Collection describes one vector space. Collection-management RPCs are
+// intentionally deferred until the controller collection model exists.
+message Collection {
+  // collection_id is the canonical identity. It is never normalized and must
+  // match [a-z][a-z0-9-]{0,62}.
+  string collection_id = 1;
+
+  // display_name is mutable, non-unique UTF-8 presentation text.
+  string display_name = 2;
+
+  // dimension is in [1, 65536] and is immutable after creation.
+  uint32 dimension = 3;
+
+  // metric must be specified and is immutable after creation.
+  Metric metric = 4;
+
+  // logical_shards is in [1, 1024] and is independent of DataNode count.
+  uint32 logical_shards = 5;
+}

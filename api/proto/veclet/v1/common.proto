@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package veclet.v1;
+
+option go_package = "github.com/sagar-arora/veclet/gen/go/veclet/v1;vecletv1";
+
+// Metric identifies the collection-wide comparison and score ordering.
+enum Metric {
+  METRIC_UNSPECIFIED = 0;
+
+  // Squared Euclidean distance. Lower scores are better.
+  METRIC_L2 = 1;
+
+  // Raw inner-product similarity. Higher scores are better.
+  METRIC_INNER_PRODUCT = 2;
+
+  // Inner product over normalized stored and query vectors. Higher is better.
+  METRIC_COSINE = 3;
+}
+
+// Neighbor is one vector-search result.
+message Neighbor {
+  // vector_id is positive and unique within its collection.
+  int64 vector_id = 1;
+
+  // score uses the collection metric's native ordering. It must be finite.
+  float score = 2;
+}
+
+// VectorRecord is the insert-only mutation accepted by ApplyBatch in v1.
+message VectorRecord {
+  // vector_id is positive and unique within its collection.
+  int64 vector_id = 1;
+
+  // version is positive. The initial insert normally uses version 1.
+  uint64 version = 2;
+
+  // values must match the collection dimension and contain only finite values.
+  repeated float values = 3;
+}

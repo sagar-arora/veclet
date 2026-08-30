@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package veclet.v1;
+
+import "veclet/v1/common.proto";
+
+option go_package = "github.com/sagar-arora/veclet/gen/go/veclet/v1;vecletv1";
+
+// DataService is the internal DataNode RPC boundary.
+service DataService {
+  // SearchShard is read-only and safe to retry for the same target within the
+  // original deadline. A stale generation or assignment is rejected.
+  rpc SearchShard(SearchShardRequest) returns (SearchShardResponse);
+
+  // ApplyBatch durably applies an insert-only batch. It is safe to retry when
+  // every record keeps the same vector_id, version, and values.
+  rpc ApplyBatch(ApplyBatchRequest) returns (ApplyBatchResponse);
+}
+
+// ShardTarget fences an RPC to one physical assignment of a logical shard.
+message ShardTarget {
+  string collection_id = 1;
+
+  // generation_id is positive and identifies immutable collection artifacts.
+  uint64 generation_id = 2;
+
+  // shard_id is zero-based and less than Collection.logical_shards.
+  uint32 shard_id = 3;
+
+  // assignment_epoch is positive and rejects work for superseded placements.
+  uint64 assignment_epoch = 4;
+}
+
+message SearchShardRequest {
+  ShardTarget target = 1;
+
+  // query_vector and k follow SearchRequest validation.
+  repeated float query_vector = 2;
+  uint32 k = 3;
+}
+
+message SearchShardResponse {
+  // neighbors contains at most k entries in metric order. Equal scores are
+  // ordered by ascending vector_id.
+  repeated Neighbor neighbors = 1;
+
+  // target echoes the assignment that produced the response.
+  ShardTarget target = 2;
+}
+
+message ApplyBatchRequest {
+  ShardTarget target = 1;
+
+  // records contains 1 to 256 unique vector IDs. The complete encoded request
+  // must not exceed 4 MiB. All records are validated before durable mutation.
+  repeated VectorRecord records = 2;
+}
+
+message ApplyBatchResponse {
+  // target echoes the assignment that accepted the mutation.
+  ShardTarget target = 1;
+
+  // applied_records is the number of newly durable records.
+  uint32 applied_records = 2;
+
+  // duplicate_records is the number of exact idempotent replays.
+  // On success, applied_records plus duplicate_records equals request size.
+  uint32 duplicate_records = 3;
+}
