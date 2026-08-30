@@ -2,8 +2,15 @@
 
 *.md text eol=lf
 *.proto text eol=lf
+*.go text eol=lf
+*.cc text eol=lf
+*.h text eol=lf
+*.cmake text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
 *.sh text eol=lf
 Makefile text eol=lf
+CMakeLists.txt text eol=lf
 
 *.a binary
 *.dylib binary

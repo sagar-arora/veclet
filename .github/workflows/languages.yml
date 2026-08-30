@@ -1,0 +1,94 @@
+name: Language toolchains
+
+on:
+  pull_request:
+    paths:
+      - api/proto/**
+      - cpp/**
+      - tools/toolchain/**
+      - .github/workflows/languages.yml
+      - buf.gen.go.yaml
+      - buf.yaml
+      - CMakeLists.txt
+      - CMakePresets.json
+      - go.mod
+      - go.sum
+      - Makefile
+      - vcpkg.json
+  push:
+    branches:
+      - main
+    paths:
+      - api/proto/**
+      - cpp/**
+      - tools/toolchain/**
+      - .github/workflows/languages.yml
+      - buf.gen.go.yaml
+      - buf.yaml
+      - CMakeLists.txt
+      - CMakePresets.json
+      - go.mod
+      - go.sum
+      - Makefile
+      - vcpkg.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: languages-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go generated bindings
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.7"
+          cache-dependency-path: go.sum
+      - name: Install Buf
+        uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
+        with:
+          version: "1.72.0"
+          checksum: "8720830e26a733da55bb89bcd3cb44849c0965fc0c44fb5d691cccdc64dca5af"
+          setup_only: true
+      - name: Generate, vet, and test
+        run: make check-go
+
+  cpp:
+    name: C++ generated bindings
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Install Buf
+        uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3 # v1.5.0
+        with:
+          version: "1.72.0"
+          checksum: "8720830e26a733da55bb89bcd3cb44849c0965fc0c44fb5d691cccdc64dca5af"
+          setup_only: true
+      - name: Check out pinned vcpkg registry
+        env:
+          VCPKG_COMMIT: d015e31e90838a4c9dfa3eed45979bc70d9357fc
+        run: |
+          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout --detach "$VCPKG_COMMIT"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Show native build tools
+        run: |
+          cmake --version
+          ninja --version
+          c++ --version
+      - name: Generate, build, and test
+        env:
+          VCPKG_ROOT: ${{ runner.temp }}/vcpkg
+          VCPKG_DISABLE_METRICS: "1"
+        run: make check-cpp

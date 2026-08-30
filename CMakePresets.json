@@ -1,0 +1,35 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "cpp",
+      "displayName": "Veclet C++ development",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cpp",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_EXTENSIONS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "cpp",
+      "configurePreset": "cpp",
+      "jobs": 2
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "cpp",
+      "configurePreset": "cpp",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

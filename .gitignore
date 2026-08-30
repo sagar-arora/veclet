@@ -12,6 +12,8 @@ build/
 cmake-build-*/
 out/
 bin/
+gen/
+vcpkg_installed/
 *.o
 *.a
 *.so

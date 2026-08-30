@@ -3,7 +3,7 @@
 `api/proto/veclet/v1` is the single source of truth for Veclet's initial gRPC
 boundary. `api/proto/veclet/storage/v1` contains the internal persisted record
 format and is never exposed by an RPC. Generated Go and C++ bindings are
-intentionally deferred to the language-toolchain change and must never be
+created locally by the language toolchains, remain untracked, and must never be
 edited by hand.
 
 The package remains `veclet.v1` until an explicit version transition. Changes
@@ -110,3 +110,11 @@ After this baseline merges, Buf's FILE policy applies to every schema change.
 
 See [the V1 contract decision](../../docs/decisions/0001-v1-protobuf-contract.md)
 for the tradeoffs fixed by this API.
+
+## Local generation
+
+`make generate-go` uses the module-pinned Go plugins. `make check-cpp` uses the
+protoc and gRPC C++ plugin from the pinned vcpkg graph. Neither command sends
+the schema or its descriptors to a remote code-generation service. See
+[the language-toolchain decision](../../docs/decisions/0003-language-toolchains.md)
+for versions and supported platforms.
