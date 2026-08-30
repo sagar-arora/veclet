@@ -22,6 +22,12 @@ are still being established.
 See [the architecture overview](docs/architecture.md) for the component and
 data model, and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change.
 
+## Development
+
+Run `make help` from the repository root to list the available commands. The
+foundation checks require only Git, GNU Make, and Bash; see
+[the development guide](docs/development.md) for their contract and CI wiring.
+
 ## Repository layout
 
 | Path | Responsibility |
