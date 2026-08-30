@@ -1,8 +1,10 @@
 # Protobuf contract
 
 `api/proto/veclet/v1` is the single source of truth for Veclet's initial gRPC
-boundary. Generated Go and C++ bindings are intentionally deferred to the
-language-toolchain change and must never be edited by hand.
+boundary. `api/proto/veclet/storage/v1` contains the internal persisted record
+format and is never exposed by an RPC. Generated Go and C++ bindings are
+intentionally deferred to the language-toolchain change and must never be
+edited by hand.
 
 The package remains `veclet.v1` until an explicit version transition. Changes
 are additive where possible. Removed field numbers, field names, enum numbers,
@@ -39,7 +41,7 @@ with the implementing RPC.
 | `generation_id` | Positive |
 | `shard_id` | Zero-based and less than `logical_shards` |
 | `assignment_epoch` | Positive |
-| `VectorRecord.vector_id` | Positive and unique within the collection |
+| `VectorRecord.vector_id` | 1–256 UTF-8 bytes, exact and unnormalized; numeric IDs use canonical decimal strings |
 | `VectorRecord.version` | Positive |
 | `VectorRecord.embedding` | Canonical float32; exactly `dimension` finite values; non-zero norm for cosine |
 | `VectorRecord.payload_data` | At most 16 KiB of opaque UTF-8; not parsed for filtering, partitioning, or routing |
@@ -75,7 +77,7 @@ Scores retain FAISS metric semantics:
   are normalized by their owning data/query boundary.
 
 Shard and global results use the same ordering. Equal scores are ordered by
-ascending vector ID so merges are deterministic.
+ascending vector-ID UTF-8 bytes so merges are deterministic and locale-free.
 
 ## Retry and failure semantics
 
@@ -97,8 +99,8 @@ The target generation fences mutations against the active immutable base
 artifact. `BatchInsert` updates authoritative local record state and its derived
 search structure; it never rewrites a published generation artifact.
 
-The durable RocksDB key/value layout deliberately reuses this canonical record
-without exposing RocksDB in the RPC API. It is defined in
+The durable RocksDB layout wraps this canonical record with a private local
+index ID without exposing RocksDB or FAISS labels in the RPC API. It is defined in
 [the V1 storage decision](../../docs/decisions/0002-v1-record-storage.md).
 
 PR 003 establishes the first protobuf compatibility baseline because earlier

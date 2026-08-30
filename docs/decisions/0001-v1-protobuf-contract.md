@@ -22,7 +22,8 @@ V1 fixes these behaviors:
   generation and routing epoch;
 - L2 preserves lower-is-better squared distance, while inner product and cosine
   are higher-is-better;
-- equal scores use ascending vector ID as the deterministic tie-breaker;
+- equal scores use ascending vector-ID UTF-8 bytes as the deterministic
+  tie-breaker;
 - generation and assignment epochs fence DataNode calls;
 - requests are deadline-bound, messages and fan-out inputs are bounded, and
   exact `BatchInsert` replay is idempotent;

@@ -20,8 +20,8 @@ enum Metric {
 
 // Neighbor is one vector-search result.
 message Neighbor {
-  // vector_id is positive and unique within its collection.
-  int64 vector_id = 1;
+  // vector_id is the exact, unnormalized UTF-8 identifier supplied at insert.
+  string vector_id = 1;
 
   // score uses the collection metric's native ordering. It must be finite.
   float score = 2;
@@ -29,9 +29,9 @@ message Neighbor {
 
 // VectorRecord is the insert-only mutation accepted by BatchInsert in v1.
 message VectorRecord {
-  // vector_id is a positive int64 and is unique within its collection. V1 uses
-  // integers to match FAISS IDs without a string-to-integer mapping layer.
-  int64 vector_id = 1;
+  // vector_id is 1 to 256 UTF-8 bytes, exact, and unique within its collection.
+  // Numeric identifiers are represented by their canonical decimal string.
+  string vector_id = 1;
 
   // version is positive. The initial insert normally uses version 1.
   uint64 version = 2;

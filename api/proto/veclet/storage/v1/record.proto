@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package veclet.storage.v1;
+
+import "veclet/v1/common.proto";
+
+option go_package = "github.com/sagar-arora/veclet/gen/go/veclet/storage/v1;storagev1";
+
+// StoredRecord is an internal persisted format, never an RPC message.
+message StoredRecord {
+  // record is the canonical user-visible value.
+  veclet.v1.VectorRecord record = 1;
+
+  // local_index_id is a positive shard-local label used by FAISS. It is
+  // durable, replica-local, and never exposed as the user's vector ID.
+  int64 local_index_id = 2;
+}
