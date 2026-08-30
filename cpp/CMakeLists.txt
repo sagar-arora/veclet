@@ -58,7 +58,11 @@ gtest_discover_tests(veclet_proto_contract_test DISCOVERY_TIMEOUT 30)
 
 find_package(faiss CONFIG REQUIRED)
 
-add_library(veclet_index STATIC src/index/flat_index.cc)
+add_library(
+  veclet_index STATIC
+  src/index/flat_index.cc
+  src/index/ivf_flat_index.cc
+  src/index/hnsw_flat_index.cc)
 target_include_directories(
   veclet_index
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
@@ -69,4 +73,15 @@ add_executable(veclet_flat_index_test tests/flat_index_test.cc)
 target_link_libraries(veclet_flat_index_test
                       PRIVATE veclet_index GTest::gtest_main)
 gtest_discover_tests(veclet_flat_index_test DISCOVERY_TIMEOUT 30)
+
+add_executable(veclet_ivf_flat_index_test tests/ivf_flat_index_test.cc)
+target_link_libraries(veclet_ivf_flat_index_test
+                      PRIVATE veclet_index GTest::gtest_main)
+gtest_discover_tests(veclet_ivf_flat_index_test DISCOVERY_TIMEOUT 30)
+
+add_executable(veclet_hnsw_flat_index_test tests/hnsw_flat_index_test.cc)
+target_link_libraries(veclet_hnsw_flat_index_test
+                      PRIVATE veclet_index GTest::gtest_main)
+gtest_discover_tests(veclet_hnsw_flat_index_test DISCOVERY_TIMEOUT 30)
+
 
