@@ -6,8 +6,18 @@ These instructions apply to `deploy/` and extend the repository instructions.
 
 - Kubernetes and Istio change orchestration and networking only; they do not own vector routing, shard placement, or database state transitions.
 - Keep standalone mode functional without cluster dependencies.
+- Keep the runtime and primary configuration cloud-neutral. Provider-specific assets must be thin adapters around the same processes and contracts.
 - QueryNodes use Deployments without persistent volumes. DataNode storage and drain behavior must be explicit.
 - Do not autoscale DataNodes until tested replica movement and safe scale-in exist.
+
+## Deployment experience
+
+- Maintain an opinionated single-node evaluation profile and a three-node production-shaped profile.
+- Target infrastructure-ready to first successful insert and search within minutes; test and document the measured path rather than relying on an aspirational quickstart.
+- Prefer one generated configuration, preflight command, startup command, and readiness command over provider-specific manual sequences.
+- Keep AWS, GCP, Azure, Oracle Cloud, Kubernetes, and bare-metal modules optional and behaviorally equivalent at the Veclet boundary.
+- Publish capacity profiles for representative 10-million, 20-million, and approximately 100-million-vector datasets. Include dimension, index parameters, replication, CPU, RAM, disk, query and ingest load, and recovery headroom.
+- Fail preflight when disk, memory, ports, identity, or replication settings are obviously unsafe. Do not silently choose a configuration that risks data loss.
 
 ## Kubernetes review
 

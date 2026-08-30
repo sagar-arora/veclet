@@ -82,6 +82,22 @@ object-store service. Clustered mode adds orchestration, identity, networking,
 and durable artifact storage without changing the protobuf contracts or C++
 data plane.
 
+Deployment simplicity is an architectural constraint, not packaging work left
+until after the data plane. Veclet maintains opinionated single-node and
+three-node profiles. Once Linux compute, networking, and disks are available, a
+developer should be able to generate the configuration, start the processes,
+pass readiness checks, and perform the first insert and search within minutes.
+The workflow and configuration model remain provider-neutral across AWS, GCP,
+Azure, Oracle Cloud, and bare metal; provider-specific modules are thin,
+optional infrastructure adapters.
+
+Capacity profiles cover representative datasets in the 10-million,
+20-million, and approximately 100-million-vector ranges. A vector count alone
+is never a capacity guarantee: every profile and benchmark states dimension,
+metric, index type and parameters, replication factor, ingest and query rates,
+RAM, CPU, disk, and recovery headroom. Preflight validation should reject an
+obviously unsafe configuration before processes begin serving traffic.
+
 A new Kubernetes cluster joins the same logical system only through an
 explicitly designed placement and routing boundary. Cross-cluster failover and
 consistency are not implied by deploying another cluster and require a separate
