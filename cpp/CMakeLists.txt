@@ -55,3 +55,18 @@ target_link_libraries(veclet_proto_contract_test
 
 include(GoogleTest)
 gtest_discover_tests(veclet_proto_contract_test DISCOVERY_TIMEOUT 30)
+
+find_package(faiss CONFIG REQUIRED)
+
+add_library(veclet_index STATIC src/index/flat_index.cc)
+target_include_directories(
+  veclet_index
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+target_link_libraries(veclet_index PUBLIC faiss::faiss)
+target_compile_features(veclet_index PUBLIC cxx_std_20)
+
+add_executable(veclet_flat_index_test tests/flat_index_test.cc)
+target_link_libraries(veclet_flat_index_test
+                      PRIVATE veclet_index GTest::gtest_main)
+gtest_discover_tests(veclet_flat_index_test DISCOVERY_TIMEOUT 30)
+

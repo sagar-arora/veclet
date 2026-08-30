@@ -1,0 +1,7 @@
+CompileFlags:
+  Add:
+    - "-I/Users/sagararora/workspace/veclet/cpp/include"
+    - "-Icpp/include"
+    - "-I/opt/homebrew/include"
+    - "-I/usr/local/include"
+    - "-std=c++20"
