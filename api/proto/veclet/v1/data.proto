@@ -12,9 +12,9 @@ service DataService {
   // original deadline. A stale generation or assignment is rejected.
   rpc SearchShard(SearchShardRequest) returns (SearchShardResponse);
 
-  // ApplyBatch durably applies an insert-only batch. It is safe to retry when
+  // BatchInsert durably inserts a batch. It is safe to retry when
   // every record keeps the same vector_id, version, and values.
-  rpc ApplyBatch(ApplyBatchRequest) returns (ApplyBatchResponse);
+  rpc BatchInsert(BatchInsertRequest) returns (BatchInsertResponse);
 }
 
 // ShardTarget fences an RPC to one physical assignment of a logical shard.
@@ -48,7 +48,7 @@ message SearchShardResponse {
   ShardTarget target = 2;
 }
 
-message ApplyBatchRequest {
+message BatchInsertRequest {
   ShardTarget target = 1;
 
   // records contains 1 to 256 unique vector IDs. The complete encoded request
@@ -56,14 +56,14 @@ message ApplyBatchRequest {
   repeated VectorRecord records = 2;
 }
 
-message ApplyBatchResponse {
+message BatchInsertResponse {
   // target echoes the assignment that accepted the mutation.
   ShardTarget target = 1;
 
-  // applied_records is the number of newly durable records.
-  uint32 applied_records = 2;
+  // inserted_records is the number of newly durable records.
+  uint32 inserted_records = 2;
 
   // duplicate_records is the number of exact idempotent replays.
-  // On success, applied_records plus duplicate_records equals request size.
+  // On success, inserted_records plus duplicate_records equals request size.
   uint32 duplicate_records = 3;
 }

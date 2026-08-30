@@ -12,7 +12,7 @@ and enum names are reserved in the same source file and are never reused.
 
 - `QueryService.Search` is the client-facing strict distributed search.
 - `DataService.SearchShard` searches exactly one fenced logical-shard replica.
-- `DataService.ApplyBatch` accepts bounded, insert-only, retry-safe mutations.
+- `DataService.BatchInsert` accepts bounded, insert-only, retry-safe mutations.
 - `Collection` describes one vector space but has no management service yet.
 
 Controller, routing-watch, build, ingestion, snapshot, and administration RPCs
@@ -41,7 +41,7 @@ with the implementing RPC.
 | `assignment_epoch` | Positive |
 | `VectorRecord.vector_id` | Positive and unique within the collection |
 | `VectorRecord.version` | Positive |
-| `ApplyBatchRequest.records` | 1–256 records with unique vector IDs |
+| `BatchInsertRequest.records` | 1–256 records with unique vector IDs |
 | Every RPC message | At most 4 MiB encoded |
 
 Unknown enum values, non-finite floats, missing message fields, size violations,
@@ -84,7 +84,7 @@ may retry only within that budget; a nested call never resets it.
 `Search` attempt may observe a newly activated generation. `SearchShard` is
 fenced by generation and assignment epoch.
 
-`ApplyBatch` validates the whole batch before mutation and acknowledges only
+`BatchInsert` validates the whole batch before mutation and acknowledges only
 after RocksDB-authoritative state is durable. Replaying the exact same vector
 ID, version, and values is a no-op counted in `duplicate_records`. A conflicting
 payload at the same version, a different version for an existing insert-only
@@ -92,7 +92,7 @@ record, or a stale generation/assignment rejects the entire batch with
 `FAILED_PRECONDITION`; it does not partially apply the request.
 
 The target generation fences mutations against the active immutable base
-artifact. `ApplyBatch` updates authoritative local record state and its derived
+artifact. `BatchInsert` updates authoritative local record state and its derived
 search structure; it never rewrites a published generation artifact.
 
 PR 003 establishes the first protobuf compatibility baseline because earlier

@@ -27,7 +27,7 @@ message Neighbor {
   float score = 2;
 }
 
-// VectorRecord is the insert-only mutation accepted by ApplyBatch in v1.
+// VectorRecord is the insert-only mutation accepted by BatchInsert in v1.
 message VectorRecord {
   // vector_id is positive and unique within its collection.
   int64 vector_id = 1;

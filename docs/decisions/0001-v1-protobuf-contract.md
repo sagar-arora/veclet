@@ -25,7 +25,7 @@ V1 fixes these behaviors:
 - equal scores use ascending vector ID as the deterministic tie-breaker;
 - generation and assignment epochs fence DataNode calls;
 - requests are deadline-bound, messages and fan-out inputs are bounded, and
-  exact `ApplyBatch` replay is idempotent;
+  exact `BatchInsert` replay is idempotent;
 - collection identity is canonical and distinct from mutable display text;
 - omitted `logical_shards` resolves to 1, while explicit zero remains invalid.
 
