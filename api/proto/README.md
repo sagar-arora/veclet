@@ -32,7 +32,7 @@ with the implementing RPC.
 | `display_name` | At most 128 UTF-8 bytes; non-unique and never used as identity |
 | `dimension` | 1–65,536 |
 | `metric` | One explicit non-zero `Metric` value |
-| `logical_shards` | 1–1,024 |
+| `logical_shards` | Omitted resolves to 1; a supplied value must be 1–1,024; responses contain the resolved value |
 | Query vector | Exactly `dimension` finite float values; non-zero norm for cosine |
 | Stored vector | Exactly `dimension` finite float values; non-zero norm for cosine |
 | `k` | 1–1,000 |

@@ -22,6 +22,8 @@ message Collection {
   // metric must be specified and is immutable after creation.
   Metric metric = 4;
 
-  // logical_shards is in [1, 1024] and is independent of DataNode count.
-  uint32 logical_shards = 5;
+  // logical_shards is independent of DataNode count. If omitted, the
+  // controller resolves it to 1. A supplied value must be in [1, 1024].
+  // Returned Collection messages always contain the resolved value.
+  optional uint32 logical_shards = 5;
 }

@@ -26,7 +26,8 @@ V1 fixes these behaviors:
 - generation and assignment epochs fence DataNode calls;
 - requests are deadline-bound, messages and fan-out inputs are bounded, and
   exact `ApplyBatch` replay is idempotent;
-- collection identity is canonical and distinct from mutable display text.
+- collection identity is canonical and distinct from mutable display text;
+- omitted `logical_shards` resolves to 1, while explicit zero remains invalid.
 
 Validation remains implementation-owned until generated bindings exist, so the
 contract adds no annotation dependency. The validation matrix in
