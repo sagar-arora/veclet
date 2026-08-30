@@ -1,0 +1,28 @@
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
+# Local tooling
+.cache/
+.codex-log/
+
+# Build output
+build/
+cmake-build-*/
+out/
+bin/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Test and coverage output
+coverage/
+*.profraw
+*.profdata
+
+# CMake user-local configuration
+CMakeUserPresets.json
