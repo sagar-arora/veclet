@@ -41,6 +41,8 @@ with the implementing RPC.
 | `assignment_epoch` | Positive |
 | `VectorRecord.vector_id` | Positive and unique within the collection |
 | `VectorRecord.version` | Positive |
+| `VectorRecord.embedding` | Canonical float32; exactly `dimension` finite values; non-zero norm for cosine |
+| `VectorRecord.payload_data` | At most 16 KiB of opaque UTF-8; not parsed for filtering, partitioning, or routing |
 | `BatchInsertRequest.records` | 1–256 records with unique vector IDs |
 | Every RPC message | At most 4 MiB encoded |
 
@@ -86,14 +88,18 @@ fenced by generation and assignment epoch.
 
 `BatchInsert` validates the whole batch before mutation and acknowledges only
 after RocksDB-authoritative state is durable. Replaying the exact same vector
-ID, version, and values is a no-op counted in `duplicate_records`. A conflicting
-payload at the same version, a different version for an existing insert-only
-record, or a stale generation/assignment rejects the entire batch with
-`FAILED_PRECONDITION`; it does not partially apply the request.
+ID, version, embedding, and payload is a no-op counted in `duplicate_records`.
+A conflicting record at the same version, a different version for an existing
+insert-only record, or a stale generation/assignment rejects the entire batch
+with `FAILED_PRECONDITION`; it does not partially apply the request.
 
 The target generation fences mutations against the active immutable base
 artifact. `BatchInsert` updates authoritative local record state and its derived
 search structure; it never rewrites a published generation artifact.
+
+The durable RocksDB key/value layout deliberately reuses this canonical record
+without exposing RocksDB in the RPC API. It is defined in
+[the V1 storage decision](../../docs/decisions/0002-v1-record-storage.md).
 
 PR 003 establishes the first protobuf compatibility baseline because earlier
 commits contain no schemas. CI resolves the exact pull-request base or pre-push

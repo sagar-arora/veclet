@@ -29,12 +29,18 @@ message Neighbor {
 
 // VectorRecord is the insert-only mutation accepted by BatchInsert in v1.
 message VectorRecord {
-  // vector_id is positive and unique within its collection.
+  // vector_id is a positive int64 and is unique within its collection. V1 uses
+  // integers to match FAISS IDs without a string-to-integer mapping layer.
   int64 vector_id = 1;
 
   // version is positive. The initial insert normally uses version 1.
   uint64 version = 2;
 
-  // values must match the collection dimension and contain only finite values.
-  repeated float values = 3;
+  // embedding is canonical float32. It must match the collection dimension and
+  // contain only finite values. Integer sources are converted at ingestion.
+  repeated float embedding = 3;
+
+  // payload_data is opaque UTF-8 user data of at most 16 KiB. V1 stores it but
+  // does not parse it for filtering, partitioning, or routing.
+  string payload_data = 4;
 }

@@ -13,7 +13,7 @@ service DataService {
   rpc SearchShard(SearchShardRequest) returns (SearchShardResponse);
 
   // BatchInsert durably inserts a batch. It is safe to retry when
-  // every record keeps the same vector_id, version, and values.
+  // every record keeps the same vector_id, version, embedding, and payload.
   rpc BatchInsert(BatchInsertRequest) returns (BatchInsertResponse);
 }
 
