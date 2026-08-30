@@ -1,5 +1,5 @@
-#include "veclet/index/ivf_flat_index.h"
 #include "veclet/index/flat_index.h"
+#include "veclet/index/ivf_flat_index.h"
 
 #include <gtest/gtest.h>
 #include <random>
@@ -68,11 +68,11 @@ TEST(IvfFlatIndexTest, TrainingAndRecallAgainstFlatOracle) {
     SearchResult ivf_res = ivf_index.Search(query, k);
 
     std::set<int64_t> oracle_ids;
-    for (const auto& hit : oracle_res.hits) {
+    for (const auto &hit : oracle_res.hits) {
       oracle_ids.insert(hit.id);
     }
 
-    for (const auto& hit : ivf_res.hits) {
+    for (const auto &hit : ivf_res.hits) {
       if (oracle_ids.count(hit.id) > 0) {
         matched_hits++;
       }
@@ -89,4 +89,14 @@ TEST(IvfFlatIndexTest, InvalidNprobe) {
   EXPECT_THROW(index.set_nprobe(11), std::invalid_argument);
 }
 
-}  // namespace veclet::index
+TEST(IvfFlatIndexTest, RejectsDuplicateLabelsAfterTraining) {
+  IvfFlatIndex index(2, MetricType::kL2, 2, 1);
+  const std::vector<float> training = {0.0f, 0.0f, 1.0f, 1.0f};
+  index.Train(training);
+  index.Add(std::vector<int64_t>{1}, std::vector<float>{0.0f, 0.0f});
+  EXPECT_THROW(
+      index.Add(std::vector<int64_t>{1}, std::vector<float>{1.0f, 1.0f}),
+      std::invalid_argument);
+}
+
+} // namespace veclet::index

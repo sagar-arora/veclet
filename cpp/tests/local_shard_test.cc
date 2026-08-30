@@ -1,0 +1,197 @@
+#include "veclet/shard/local_shard.h"
+
+#include "temp_directory.h"
+#include "veclet/index/flat_index.h"
+
+#include <gtest/gtest.h>
+
+#include <limits>
+#include <memory>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace veclet::shard {
+namespace {
+
+veclet::v1::VectorRecord MakeRecord(std::string vector_id, float x, float y) {
+  veclet::v1::VectorRecord record;
+  record.set_vector_id(std::move(vector_id));
+  record.set_version(1);
+  record.add_embedding(x);
+  record.add_embedding(y);
+  record.set_payload_data("metadata");
+  return record;
+}
+
+class FailFirstAddIndex final : public index::LocalIndex {
+public:
+  int dimension() const override { return delegate_.dimension(); }
+  index::MetricType metric() const override { return delegate_.metric(); }
+  int64_t size() const override { return delegate_.size(); }
+  bool is_trained() const override { return delegate_.is_trained(); }
+
+  void Train(std::span<const float> vectors) override {
+    delegate_.Train(vectors);
+  }
+
+  void Add(std::span<const int64_t> ids,
+           std::span<const float> vectors) override {
+    if (fail_first_add_) {
+      fail_first_add_ = false;
+      throw std::runtime_error("injected FAISS add failure");
+    }
+    delegate_.Add(ids, vectors);
+  }
+
+  index::SearchResult Search(std::span<const float> query,
+                             int k) const override {
+    return delegate_.Search(query, k);
+  }
+
+  void Remove(std::span<const int64_t> ids) override { delegate_.Remove(ids); }
+
+private:
+  index::FlatIndex delegate_{2, index::MetricType::kL2};
+  bool fail_first_add_{true};
+};
+
+TEST(LocalShardTest, InsertGetAndSearch) {
+  testing::TempDirectory temp_directory;
+  auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
+  LocalShard shard(temp_directory.path(), std::move(index));
+
+  shard.Put(MakeRecord("v1", 1.0f, 0.0f));
+  shard.Put(MakeRecord("v2", 0.0f, 1.0f));
+  EXPECT_EQ(shard.size(), 2);
+
+  veclet::v1::VectorRecord fetched;
+  ASSERT_TRUE(shard.Get("v1", &fetched));
+  EXPECT_EQ(fetched.payload_data(), "metadata");
+  EXPECT_FALSE(shard.Get("missing", nullptr));
+
+  const std::vector<float> query = {0.9f, 0.1f};
+  const ShardSearchResult result = shard.Search(query, 2);
+  ASSERT_EQ(result.hits.size(), 2);
+  EXPECT_EQ(result.hits[0].record.vector_id(), "v1");
+  EXPECT_EQ(result.hits[1].record.vector_id(), "v2");
+  EXPECT_LT(result.hits[0].score, result.hits[1].score);
+}
+
+TEST(LocalShardTest, ExactReplayIsIdempotentAndConflictIsRejected) {
+  testing::TempDirectory temp_directory;
+  auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
+  LocalShard shard(temp_directory.path(), std::move(index));
+  veclet::v1::VectorRecord record = MakeRecord("same", 1.0f, 0.0f);
+
+  shard.Put(record);
+  shard.Put(record);
+  EXPECT_EQ(shard.size(), 1);
+  EXPECT_EQ(shard.Search(std::vector<float>{1.0f, 0.0f}, 10).hits.size(), 1);
+
+  record.set_version(2);
+  EXPECT_THROW(shard.Put(record), std::domain_error);
+  EXPECT_EQ(shard.size(), 1);
+}
+
+TEST(LocalShardTest, RecoveryRebuildsDerivedIndexAndMappings) {
+  testing::TempDirectory temp_directory;
+  {
+    auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
+    LocalShard shard(temp_directory.path(), std::move(index));
+    shard.Put(MakeRecord("doc_1", 10.0f, 0.0f));
+    shard.Put(MakeRecord("doc_2", 0.0f, 10.0f));
+  }
+  {
+    auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
+    LocalShard shard(temp_directory.path(), std::move(index));
+    EXPECT_EQ(shard.size(), 2);
+    const ShardSearchResult result =
+        shard.Search(std::vector<float>{9.0f, 0.5f}, 1);
+    ASSERT_EQ(result.hits.size(), 1);
+    EXPECT_EQ(result.hits[0].record.vector_id(), "doc_1");
+  }
+}
+
+TEST(LocalShardTest, FailedDerivedUpdateFailsClosedUntilRestartRecovery) {
+  testing::TempDirectory temp_directory;
+  const veclet::v1::VectorRecord record = MakeRecord("committed", 1.0f, 0.0f);
+  {
+    LocalShard shard(temp_directory.path(),
+                     std::make_unique<FailFirstAddIndex>());
+    EXPECT_THROW(shard.Put(record), std::runtime_error);
+    EXPECT_EQ(shard.size(), 1);
+    EXPECT_TRUE(shard.Get("committed", nullptr));
+    EXPECT_THROW(shard.Search(std::vector<float>{1.0f, 0.0f}, 1),
+                 std::runtime_error);
+    EXPECT_THROW(shard.Put(record), std::runtime_error);
+  }
+  {
+    auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
+    LocalShard recovered(temp_directory.path(), std::move(index));
+    const ShardSearchResult result =
+        recovered.Search(std::vector<float>{1.0f, 0.0f}, 1);
+    ASSERT_EQ(result.hits.size(), 1);
+    EXPECT_EQ(result.hits[0].record.vector_id(), "committed");
+    recovered.Put(record);
+    EXPECT_EQ(recovered.size(), 1);
+  }
+}
+
+TEST(LocalShardTest, EqualScoresUseExternalIdByteOrdering) {
+  testing::TempDirectory temp_directory;
+  auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
+  LocalShard shard(temp_directory.path(), std::move(index));
+  shard.Put(MakeRecord("z-last", 0.0f, 1.0f));
+  shard.Put(MakeRecord("a-first", 0.0f, -1.0f));
+
+  const ShardSearchResult result =
+      shard.Search(std::vector<float>{0.0f, 0.0f}, 2);
+  ASSERT_EQ(result.hits.size(), 2);
+  EXPECT_FLOAT_EQ(result.hits[0].score, result.hits[1].score);
+  EXPECT_EQ(result.hits[0].record.vector_id(), "a-first");
+  EXPECT_EQ(result.hits[1].record.vector_id(), "z-last");
+}
+
+TEST(LocalShardTest, RejectsInvalidRecordsAndQueries) {
+  testing::TempDirectory temp_directory;
+  auto index =
+      std::make_unique<index::FlatIndex>(2, index::MetricType::kCosine);
+  LocalShard shard(temp_directory.path(), std::move(index));
+
+  veclet::v1::VectorRecord record = MakeRecord("valid", 1.0f, 0.0f);
+  record.set_vector_id("");
+  EXPECT_THROW(shard.Put(record), std::invalid_argument);
+
+  record = MakeRecord(std::string("\xc3\x28", 2), 1.0f, 0.0f);
+  EXPECT_THROW(shard.Put(record), std::invalid_argument);
+
+  record = MakeRecord("version-zero", 1.0f, 0.0f);
+  record.set_version(0);
+  EXPECT_THROW(shard.Put(record), std::invalid_argument);
+
+  record = MakeRecord("wrong-dimension", 1.0f, 0.0f);
+  record.clear_embedding();
+  record.add_embedding(1.0f);
+  EXPECT_THROW(shard.Put(record), std::invalid_argument);
+
+  record =
+      MakeRecord("not-finite", 1.0f, std::numeric_limits<float>::quiet_NaN());
+  EXPECT_THROW(shard.Put(record), std::invalid_argument);
+
+  record = MakeRecord("zero-cosine", 0.0f, -0.0f);
+  EXPECT_THROW(shard.Put(record), std::invalid_argument);
+
+  EXPECT_THROW(shard.Search(std::vector<float>{1.0f}, 1),
+               std::invalid_argument);
+  EXPECT_THROW(shard.Search(std::vector<float>{1.0f, 0.0f}, 0),
+               std::invalid_argument);
+  EXPECT_THROW(shard.Search(std::vector<float>{1.0f, 0.0f}, 1001),
+               std::invalid_argument);
+  EXPECT_EQ(shard.size(), 0);
+}
+
+} // namespace
+} // namespace veclet::shard

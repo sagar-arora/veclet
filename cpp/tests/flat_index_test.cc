@@ -1,7 +1,8 @@
 #include "veclet/index/flat_index.h"
 
-#include <gtest/gtest.h>
 #include <cmath>
+#include <gtest/gtest.h>
+#include <limits>
 
 namespace veclet::index {
 
@@ -14,9 +15,9 @@ TEST(FlatIndexTest, L2ExactRecallAndSorting) {
 
   std::vector<int64_t> ids = {1, 2, 3};
   std::vector<float> vectors = {
-      1.0f, 0.0f,  // ID 1
-      0.0f, 1.0f,  // ID 2
-      1.0f, 1.0f   // ID 3
+      1.0f, 0.0f, // ID 1
+      0.0f, 1.0f, // ID 2
+      1.0f, 1.0f  // ID 3
   };
 
   index.Add(ids, vectors);
@@ -29,7 +30,7 @@ TEST(FlatIndexTest, L2ExactRecallAndSorting) {
   ASSERT_EQ(result.hits.size(), 2);
   EXPECT_EQ(result.hits[0].id, 1);
   EXPECT_EQ(result.hits[1].id, 3);
-  EXPECT_LT(result.hits[0].score, result.hits[1].score);  // L2: lower is better
+  EXPECT_LT(result.hits[0].score, result.hits[1].score); // L2: lower is better
 }
 
 TEST(FlatIndexTest, InnerProductExactRecall) {
@@ -37,8 +38,8 @@ TEST(FlatIndexTest, InnerProductExactRecall) {
 
   std::vector<int64_t> ids = {10, 20};
   std::vector<float> vectors = {
-      1.0f, 0.0f,  // ID 10
-      0.5f, 0.5f   // ID 20
+      1.0f, 0.0f, // ID 10
+      0.5f, 0.5f  // ID 20
   };
 
   index.Add(ids, vectors);
@@ -49,7 +50,7 @@ TEST(FlatIndexTest, InnerProductExactRecall) {
   ASSERT_EQ(result.hits.size(), 2);
   EXPECT_EQ(result.hits[0].id, 10);
   EXPECT_EQ(result.hits[1].id, 20);
-  EXPECT_GT(result.hits[0].score, result.hits[1].score);  // IP: higher is better
+  EXPECT_GT(result.hits[0].score, result.hits[1].score); // IP: higher is better
 }
 
 TEST(FlatIndexTest, CosineNormalizationAndSearch) {
@@ -57,8 +58,8 @@ TEST(FlatIndexTest, CosineNormalizationAndSearch) {
 
   std::vector<int64_t> ids = {100, 200};
   std::vector<float> vectors = {
-      10.0f, 0.0f,  // ID 100 (unnormalized)
-      0.0f, 5.0f    // ID 200 (unnormalized)
+      10.0f, 0.0f, // ID 100 (unnormalized)
+      0.0f, 5.0f   // ID 200 (unnormalized)
   };
 
   index.Add(ids, vectors);
@@ -77,8 +78,8 @@ TEST(FlatIndexTest, DeterministicTieBreaking) {
   // Two vectors equidistant from query [0.0, 0.0]
   std::vector<int64_t> ids = {5, 2};
   std::vector<float> vectors = {
-      0.0f, 1.0f,   // ID 5 (dist^2 = 1.0)
-      0.0f, -1.0f   // ID 2 (dist^2 = 1.0)
+      0.0f, 1.0f, // ID 5 (dist^2 = 1.0)
+      0.0f, -1.0f // ID 2 (dist^2 = 1.0)
   };
 
   index.Add(ids, vectors);
@@ -95,6 +96,8 @@ TEST(FlatIndexTest, DeterministicTieBreaking) {
 
 TEST(FlatIndexTest, InvalidInputHandling) {
   EXPECT_THROW(FlatIndex(0, MetricType::kL2), std::invalid_argument);
+  EXPECT_THROW(FlatIndex(2, static_cast<MetricType>(99)),
+               std::invalid_argument);
 
   FlatIndex index(2, MetricType::kL2);
 
@@ -123,6 +126,47 @@ TEST(FlatIndexTest, InvalidInputHandling) {
   std::vector<float> valid_query = {1.0f, 2.0f};
   EXPECT_THROW(index.Search(valid_query, 0), std::invalid_argument);
   EXPECT_THROW(index.Search(valid_query, -1), std::invalid_argument);
+  EXPECT_THROW(index.Search(valid_query, 1001), std::invalid_argument);
+}
+
+TEST(FlatIndexTest, RejectsNonPositiveAndDuplicateLabels) {
+  FlatIndex index(2, MetricType::kL2);
+  EXPECT_THROW(
+      index.Add(std::vector<int64_t>{0}, std::vector<float>{1.0f, 0.0f}),
+      std::invalid_argument);
+  EXPECT_THROW(
+      index.Add(std::vector<int64_t>{-1}, std::vector<float>{1.0f, 0.0f}),
+      std::invalid_argument);
+  EXPECT_THROW(index.Add(std::vector<int64_t>{1, 1},
+                         std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f}),
+               std::invalid_argument);
+
+  index.Add(std::vector<int64_t>{1}, std::vector<float>{1.0f, 0.0f});
+  EXPECT_THROW(
+      index.Add(std::vector<int64_t>{1}, std::vector<float>{0.0f, 1.0f}),
+      std::invalid_argument);
+  EXPECT_EQ(index.size(), 1);
+}
+
+TEST(FlatIndexTest, RejectsZeroNormCosineVectorsAndQueries) {
+  FlatIndex index(2, MetricType::kCosine);
+  EXPECT_THROW(
+      index.Add(std::vector<int64_t>{1}, std::vector<float>{0.0f, -0.0f}),
+      std::invalid_argument);
+
+  index.Add(std::vector<int64_t>{1}, std::vector<float>{1.0f, 0.0f});
+  EXPECT_THROW(index.Search(std::vector<float>{0.0f, 0.0f}, 1),
+               std::invalid_argument);
+}
+
+TEST(FlatIndexTest, CloseScoresUseMetricOrderingRatherThanEpsilonTie) {
+  FlatIndex index(1, MetricType::kL2);
+  index.Add(std::vector<int64_t>{1, 2}, std::vector<float>{1.0000002f, 1.0f});
+
+  const SearchResult result = index.Search(std::vector<float>{0.0f}, 2);
+  ASSERT_EQ(result.hits.size(), 2);
+  EXPECT_EQ(result.hits[0].id, 2);
+  EXPECT_LT(result.hits[0].score, result.hits[1].score);
 }
 
 TEST(FlatIndexTest, RemoveVectors) {
@@ -144,4 +188,4 @@ TEST(FlatIndexTest, RemoveVectors) {
   EXPECT_EQ(result.hits[0].id, 2);
 }
 
-}  // namespace veclet::index
+} // namespace veclet::index

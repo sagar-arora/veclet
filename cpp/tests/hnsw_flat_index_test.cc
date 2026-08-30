@@ -1,5 +1,5 @@
-#include "veclet/index/hnsw_flat_index.h"
 #include "veclet/index/flat_index.h"
+#include "veclet/index/hnsw_flat_index.h"
 
 #include <gtest/gtest.h>
 #include <random>
@@ -63,11 +63,11 @@ TEST(HnswFlatIndexTest, RecallAgainstFlatOracle) {
     SearchResult hnsw_res = hnsw_index.Search(query, k);
 
     std::set<int64_t> oracle_ids;
-    for (const auto& hit : oracle_res.hits) {
+    for (const auto &hit : oracle_res.hits) {
       oracle_ids.insert(hit.id);
     }
 
-    for (const auto& hit : hnsw_res.hits) {
+    for (const auto &hit : hnsw_res.hits) {
       if (oracle_ids.count(hit.id) > 0) {
         matched_hits++;
       }
@@ -84,4 +84,12 @@ TEST(HnswFlatIndexTest, EfSearchValidation) {
   EXPECT_THROW(index.set_efSearch(-5), std::invalid_argument);
 }
 
-}  // namespace veclet::index
+TEST(HnswFlatIndexTest, RejectsDuplicateLabels) {
+  HnswFlatIndex index(2, MetricType::kL2);
+  index.Add(std::vector<int64_t>{1}, std::vector<float>{0.0f, 0.0f});
+  EXPECT_THROW(
+      index.Add(std::vector<int64_t>{1}, std::vector<float>{1.0f, 1.0f}),
+      std::invalid_argument);
+}
+
+} // namespace veclet::index

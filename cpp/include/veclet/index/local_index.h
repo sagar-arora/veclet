@@ -1,10 +1,9 @@
 #ifndef VECLET_INDEX_LOCAL_INDEX_H_
 #define VECLET_INDEX_LOCAL_INDEX_H_
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <span>
-#include <string>
 #include <vector>
 
 namespace veclet::index {
@@ -18,10 +17,9 @@ enum class MetricType {
 struct SearchHit {
   int64_t id{0};
   float score{0.0f};
-  std::string vector_id;
 
-  bool operator==(const SearchHit& other) const {
-    return id == other.id && score == other.score && vector_id == other.vector_id;
+  bool operator==(const SearchHit &other) const {
+    return id == other.id && score == other.score;
   }
 };
 
@@ -30,8 +28,13 @@ struct SearchResult {
 };
 
 class LocalIndex {
- public:
+public:
   virtual ~LocalIndex() = default;
+
+  // LocalIndex implementations are not internally synchronized. Concurrent
+  // Search calls are supported after configuration is complete. The owner
+  // must exclude Train, Add, Remove, and configuration setters from every
+  // other operation.
 
   virtual int dimension() const = 0;
   virtual MetricType metric() const = 0;
@@ -39,11 +42,12 @@ class LocalIndex {
   virtual bool is_trained() const = 0;
 
   virtual void Train(std::span<const float> vectors) = 0;
-  virtual void Add(std::span<const int64_t> ids, std::span<const float> vectors) = 0;
+  virtual void Add(std::span<const int64_t> ids,
+                   std::span<const float> vectors) = 0;
   virtual SearchResult Search(std::span<const float> query, int k) const = 0;
   virtual void Remove(std::span<const int64_t> ids) = 0;
 };
 
-}  // namespace veclet::index
+} // namespace veclet::index
 
-#endif  // VECLET_INDEX_LOCAL_INDEX_H_
+#endif // VECLET_INDEX_LOCAL_INDEX_H_

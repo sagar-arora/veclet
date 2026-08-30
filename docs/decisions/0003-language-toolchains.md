@@ -20,8 +20,9 @@ Ubuntu 24.04 amd64 for CI. Windows and cross-compilation are not yet supported.
 - C++ uses C++20, CMake 3.28 or newer, Ninja 1.11 or newer, and vcpkg manifest
   mode. The registry baseline is the immutable vcpkg `2026.05.25` release at
   `d015e31e90838a4c9dfa3eed45979bc70d9357fc`.
-- That baseline resolves gRPC C++ 1.76.0#1, Protobuf 6.33.4#2, and GoogleTest
-  1.17.0#2. Port revisions are part of the baseline and are not floated.
+- That baseline resolves FAISS 1.14.1, RocksDB 11.0.4, gRPC C++ 1.76.0#1,
+  Protobuf 6.33.4#2, and GoogleTest 1.17.0#2. Port revisions are part of the
+  baseline and are not floated.
 - Buf 1.72.0 invokes only local generators. Go plugins are module-pinned tools;
   C++ uses `protoc` and `grpc_cpp_plugin` from the same vcpkg graph as the
   linked runtime.

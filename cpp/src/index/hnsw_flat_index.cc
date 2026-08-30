@@ -13,8 +13,8 @@
 
 namespace veclet::index {
 
-
-HnswFlatIndex::HnswFlatIndex(int dimension, MetricType metric, int M, int efSearch)
+HnswFlatIndex::HnswFlatIndex(int dimension, MetricType metric, int M,
+                             int efSearch)
     : dimension_(dimension), metric_(metric), M_(M), efSearch_(efSearch) {
   if (dimension <= 0) {
     throw std::invalid_argument("Dimension must be positive");
@@ -26,9 +26,17 @@ HnswFlatIndex::HnswFlatIndex(int dimension, MetricType metric, int M, int efSear
     throw std::invalid_argument("efSearch must be positive");
   }
 
-  faiss::MetricType faiss_metric = faiss::METRIC_L2;
-  if (metric_ != MetricType::kL2) {
+  faiss::MetricType faiss_metric;
+  switch (metric_) {
+  case MetricType::kL2:
+    faiss_metric = faiss::METRIC_L2;
+    break;
+  case MetricType::kInnerProduct:
+  case MetricType::kCosine:
     faiss_metric = faiss::METRIC_INNER_PRODUCT;
+    break;
+  default:
+    throw std::invalid_argument("Unsupported metric type");
   }
 
   raw_hnsw_ = new faiss::IndexHNSWFlat(dimension, M, faiss_metric);
@@ -40,12 +48,10 @@ HnswFlatIndex::HnswFlatIndex(int dimension, MetricType metric, int M, int efSear
 
 HnswFlatIndex::~HnswFlatIndex() = default;
 
-HnswFlatIndex::HnswFlatIndex(HnswFlatIndex&&) noexcept = default;
-HnswFlatIndex& HnswFlatIndex::operator=(HnswFlatIndex&&) noexcept = default;
+HnswFlatIndex::HnswFlatIndex(HnswFlatIndex &&) noexcept = default;
+HnswFlatIndex &HnswFlatIndex::operator=(HnswFlatIndex &&) noexcept = default;
 
-int64_t HnswFlatIndex::size() const {
-  return index_ ? index_->ntotal : 0;
-}
+int64_t HnswFlatIndex::size() const { return index_ ? index_->ntotal : 0; }
 
 void HnswFlatIndex::set_efSearch(int efSearch) {
   if (efSearch <= 0) {
@@ -61,12 +67,11 @@ void HnswFlatIndex::Train([[maybe_unused]] std::span<const float> vectors) {
   // HNSW indexes do not require a separate training step.
 }
 
-void HnswFlatIndex::Add(std::span<const int64_t> ids, std::span<const float> vectors) {
+void HnswFlatIndex::Add(std::span<const int64_t> ids,
+                        std::span<const float> vectors) {
   ValidateVectors(vectors, dimension_);
   const size_t num_vectors = vectors.size() / dimension_;
-  if (ids.size() != num_vectors) {
-    throw std::invalid_argument("IDs size does not match number of vectors");
-  }
+  ValidateNewIds(ids, num_vectors, ids_);
 
   std::vector<float> processed_vectors(vectors.begin(), vectors.end());
   if (metric_ == MetricType::kCosine) {
@@ -76,10 +81,10 @@ void HnswFlatIndex::Add(std::span<const int64_t> ids, std::span<const float> vec
     }
   }
 
-  index_->add_with_ids(
-      static_cast<faiss::idx_t>(num_vectors),
-      processed_vectors.data(),
-      reinterpret_cast<const faiss::idx_t*>(ids.data()));
+  index_->add_with_ids(static_cast<faiss::idx_t>(num_vectors),
+                       processed_vectors.data(),
+                       reinterpret_cast<const faiss::idx_t *>(ids.data()));
+  ids_.insert(ids.begin(), ids.end());
 }
 
 SearchResult HnswFlatIndex::Search(std::span<const float> query, int k) const {
@@ -87,9 +92,7 @@ SearchResult HnswFlatIndex::Search(std::span<const float> query, int k) const {
   if (query.size() != static_cast<size_t>(dimension_)) {
     throw std::invalid_argument("Query size must match index dimension");
   }
-  if (k <= 0) {
-    throw std::invalid_argument("k must be positive");
-  }
+  ValidateSearchK(k);
 
   std::vector<float> processed_query(query.begin(), query.end());
   if (metric_ == MetricType::kCosine) {
@@ -99,36 +102,34 @@ SearchResult HnswFlatIndex::Search(std::span<const float> query, int k) const {
   std::vector<float> distances(k);
   std::vector<faiss::idx_t> labels(k);
 
-  raw_hnsw_->hnsw.efSearch = efSearch_;
-  index_->search(
-      1,
-      processed_query.data(),
-      k,
-      distances.data(),
-      labels.data());
+  index_->search(1, processed_query.data(), k, distances.data(), labels.data());
 
   SearchResult result;
   for (int i = 0; i < k; ++i) {
     if (labels[i] >= 0) {
+      if (!std::isfinite(distances[i])) {
+        throw std::runtime_error("FAISS returned a non-finite score");
+      }
       SearchHit hit;
       hit.id = labels[i];
       hit.score = distances[i];
-      hit.vector_id = std::to_string(labels[i]);
       result.hits.push_back(hit);
     }
   }
 
   // Deterministic tie-breaking and sorting
-  std::sort(result.hits.begin(), result.hits.end(), [this](const SearchHit& a, const SearchHit& b) {
-    if (std::abs(a.score - b.score) > 1e-6f) {
-      if (metric_ == MetricType::kL2) {
-        return a.score < b.score;  // L2: lower is better
-      } else {
-        return a.score > b.score;  // InnerProduct/Cosine: higher is better
-      }
-    }
-    return a.id < b.id;  // Tie-breaker: lower ID is preferred
-  });
+  std::sort(result.hits.begin(), result.hits.end(),
+            [this](const SearchHit &a, const SearchHit &b) {
+              if (a.score != b.score) {
+                if (metric_ == MetricType::kL2) {
+                  return a.score < b.score; // L2: lower is better
+                } else {
+                  return a.score >
+                         b.score; // InnerProduct/Cosine: higher is better
+                }
+              }
+              return a.id < b.id; // Tie-breaker: lower ID is preferred
+            });
 
   return result;
 }
@@ -137,4 +138,4 @@ void HnswFlatIndex::Remove([[maybe_unused]] std::span<const int64_t> ids) {
   throw std::domain_error("HnswFlatIndex does not support vector removal");
 }
 
-}  // namespace veclet::index
+} // namespace veclet::index
