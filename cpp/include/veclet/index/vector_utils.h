@@ -11,6 +11,10 @@
 
 namespace veclet::index {
 
+// QueryService limits client k to 1000. LocalShard may ask an index for more
+// candidates so it can resolve an equal-score boundary using external IDs.
+inline constexpr int kMaxIndexSearchCandidates = 10000;
+
 inline void ValidateVectors(std::span<const float> vectors, int dimension) {
   if (dimension <= 0) {
     throw std::invalid_argument("Dimension must be positive");
@@ -60,8 +64,8 @@ inline void ValidateNewIds(std::span<const int64_t> ids, size_t expected_size,
 }
 
 inline void ValidateSearchK(int k) {
-  if (k <= 0 || k > 1000) {
-    throw std::invalid_argument("k must be between 1 and 1000");
+  if (k <= 0 || k > kMaxIndexSearchCandidates) {
+    throw std::invalid_argument("k must be between 1 and 10000");
   }
 }
 

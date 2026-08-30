@@ -56,6 +56,7 @@ target_link_libraries(veclet_proto_contract_test
 include(GoogleTest)
 gtest_discover_tests(veclet_proto_contract_test DISCOVERY_TIMEOUT 30)
 
+find_package(OpenMP REQUIRED)
 find_package(faiss CONFIG REQUIRED)
 find_package(RocksDB CONFIG REQUIRED)
 

@@ -23,6 +23,9 @@ Ubuntu 24.04 amd64 for CI. Windows and cross-compilation are not yet supported.
 - That baseline resolves FAISS 1.14.1, RocksDB 11.0.4, gRPC C++ 1.76.0#1,
   Protobuf 6.33.4#2, and GoogleTest 1.17.0#2. Port revisions are part of the
   baseline and are not floated.
+- FAISS uses the platform OpenMP runtime. Ubuntu supplies it with GCC; macOS
+  arm64 development uses Homebrew `libomp` because Apple Clang does not bundle
+  an OpenMP runtime.
 - Buf 1.72.0 invokes only local generators. Go plugins are module-pinned tools;
   C++ uses `protoc` and `grpc_cpp_plugin` from the same vcpkg graph as the
   linked runtime.

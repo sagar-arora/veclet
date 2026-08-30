@@ -41,6 +41,8 @@ public:
   PutResult Put(const veclet::v1::VectorRecord &record);
   bool Get(const std::string &vector_id,
            veclet::storage::v1::StoredRecord *stored_record) const;
+  bool GetVectorIdByLocalIndexId(int64_t local_index_id,
+                                 std::string *vector_id) const;
   bool
   GetByLocalIndexId(int64_t local_index_id,
                     veclet::storage::v1::StoredRecord *stored_record) const;

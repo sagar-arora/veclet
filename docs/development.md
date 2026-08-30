@@ -41,6 +41,16 @@ The checkout is local tooling and remains ignored. `make check-cpp` installs
 the manifest into `build/cpp/vcpkg_installed`, generates bindings with the
 vcpkg-provided protoc and gRPC plugin, builds with Ninja, and runs CTest.
 
+FAISS requires OpenMP. Apple Clang does not ship its runtime, so macOS arm64
+development also requires Homebrew `libomp`. Its keg-only paths must be visible
+while vcpkg configures FAISS:
+
+```sh
+brew install libomp
+export CPATH="$(brew --prefix libomp)/include${CPATH:+:$CPATH}"
+export LIBRARY_PATH="$(brew --prefix libomp)/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
+```
+
 `make generate-go` invokes the generators declared by `go.mod`. It does not
 require globally installed protoc plugins. Both language generators run
 locally; Veclet schemas are not uploaded to a remote generation service.

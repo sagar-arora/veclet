@@ -2,9 +2,11 @@
 
 #include "temp_directory.h"
 #include "veclet/index/flat_index.h"
+#include "veclet/index/ivf_flat_index.h"
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <span>
@@ -127,6 +129,10 @@ TEST(LocalShardTest, FailedDerivedUpdateFailsClosedUntilRestartRecovery) {
     EXPECT_THROW(shard.Search(std::vector<float>{1.0f, 0.0f}, 1),
                  std::runtime_error);
     EXPECT_THROW(shard.Put(record), std::runtime_error);
+    EXPECT_THROW(shard.Put(MakeRecord("not-committed", 0.0f, 1.0f)),
+                 std::runtime_error);
+    EXPECT_FALSE(shard.Get("not-committed", nullptr));
+    EXPECT_EQ(shard.size(), 1);
   }
   {
     auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
@@ -146,13 +152,30 @@ TEST(LocalShardTest, EqualScoresUseExternalIdByteOrdering) {
   LocalShard shard(temp_directory.path(), std::move(index));
   shard.Put(MakeRecord("z-last", 0.0f, 1.0f));
   shard.Put(MakeRecord("a-first", 0.0f, -1.0f));
+  shard.Put(MakeRecord("m-middle", 1.0f, 0.0f));
 
   const ShardSearchResult result =
-      shard.Search(std::vector<float>{0.0f, 0.0f}, 2);
-  ASSERT_EQ(result.hits.size(), 2);
-  EXPECT_FLOAT_EQ(result.hits[0].score, result.hits[1].score);
+      shard.Search(std::vector<float>{0.0f, 0.0f}, 1);
+  ASSERT_EQ(result.hits.size(), 1);
   EXPECT_EQ(result.hits[0].record.vector_id(), "a-first");
-  EXPECT_EQ(result.hits[1].record.vector_id(), "z-last");
+}
+
+TEST(LocalShardTest, RejectsUnusableIndexBeforeCreatingRocksDb) {
+  testing::TempDirectory temp_directory;
+  const std::filesystem::path null_db =
+      std::filesystem::path(temp_directory.path()) / "null-index";
+  EXPECT_THROW(
+      LocalShard(null_db.string(), std::unique_ptr<index::LocalIndex>{}),
+      std::invalid_argument);
+  EXPECT_FALSE(std::filesystem::exists(null_db));
+
+  const std::filesystem::path untrained_db =
+      std::filesystem::path(temp_directory.path()) / "untrained-index";
+  auto untrained =
+      std::make_unique<index::IvfFlatIndex>(2, index::MetricType::kL2, 2, 1);
+  EXPECT_THROW(LocalShard(untrained_db.string(), std::move(untrained)),
+               std::invalid_argument);
+  EXPECT_FALSE(std::filesystem::exists(untrained_db));
 }
 
 TEST(LocalShardTest, RejectsInvalidRecordsAndQueries) {

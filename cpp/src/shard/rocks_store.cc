@@ -309,18 +309,10 @@ bool RocksStore::Get(const std::string &vector_id,
 bool RocksStore::GetByLocalIndexId(
     int64_t local_index_id,
     veclet::storage::v1::StoredRecord *stored_record) const {
-  if (local_index_id <= 0) {
-    throw std::invalid_argument("local_index_id must be positive");
-  }
-
   std::string vector_id;
-  const rocksdb::Status mapping_status =
-      db_->Get(rocksdb::ReadOptions(), index_ids_cf_,
-               EncodeUint64(static_cast<uint64_t>(local_index_id)), &vector_id);
-  if (mapping_status.IsNotFound()) {
+  if (!GetVectorIdByLocalIndexId(local_index_id, &vector_id)) {
     return false;
   }
-  CheckStatus(mapping_status, "RocksDB reverse-mapping read failed");
 
   veclet::storage::v1::StoredRecord parsed;
   if (!Get(vector_id, &parsed)) {
@@ -333,6 +325,31 @@ bool RocksStore::GetByLocalIndexId(
   }
   if (stored_record) {
     *stored_record = std::move(parsed);
+  }
+  return true;
+}
+
+bool RocksStore::GetVectorIdByLocalIndexId(int64_t local_index_id,
+                                           std::string *vector_id) const {
+  if (local_index_id <= 0) {
+    throw std::invalid_argument("local_index_id must be positive");
+  }
+
+  std::string mapped_vector_id;
+  const rocksdb::Status mapping_status = db_->Get(
+      rocksdb::ReadOptions(), index_ids_cf_,
+      EncodeUint64(static_cast<uint64_t>(local_index_id)), &mapped_vector_id);
+  if (mapping_status.IsNotFound()) {
+    return false;
+  }
+  CheckStatus(mapping_status, "RocksDB reverse-mapping read failed");
+  if (mapped_vector_id.empty() || mapped_vector_id.size() > 256 ||
+      !IsValidUtf8(mapped_vector_id)) {
+    throw std::runtime_error(
+        "Corrupt RocksDB reverse mapping contains an invalid vector_id");
+  }
+  if (vector_id) {
+    *vector_id = std::move(mapped_vector_id);
   }
   return true;
 }

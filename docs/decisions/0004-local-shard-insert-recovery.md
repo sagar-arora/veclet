@@ -38,11 +38,13 @@ The crash and failure model is:
 | FAISS add throws | mutation outcome may be ambiguous | mark the derived index unhealthy and restart; do not serve potentially partial search results |
 | acknowledgement is lost | record and FAISS label exist | exact retry resolves the existing record and is a no-op |
 
-Recovery starts with an empty index, validates every record and reverse mapping,
-trains the index when required, and rebuilds FAISS. A corrupt record, missing
-mapping, duplicate local ID, training failure, or add failure prevents the shard
-from starting. The owning process is responsible for not publishing the shard
-as READY until construction and recovery finish.
+Recovery starts with an empty, already-trained index, validates every record and
+reverse mapping, and rebuilds FAISS in batches bounded to at most 1,024 vectors
+and approximately 1,048,576 float values. Index training and loading immutable
+trained artifacts belong to the generation lifecycle rather than local record
+recovery. A corrupt record, missing mapping, duplicate local ID, or add failure
+prevents the shard from starting. The owning process is responsible for not
+publishing the shard as READY until construction and recovery finish.
 
 `LocalShard` serializes FAISS mutation with an exclusive lock and permits
 concurrent searches with a shared lock. RocksDB calls happen outside that lock.
@@ -57,5 +59,8 @@ Failing closed sacrifices temporary availability but avoids silent partial
 search results or guessing whether a FAISS mutation partially completed.
 
 Search resolves each returned local label through the `index_ids` column family
-and fails on a missing mapping. Equal scores are ordered by exact external
-vector-ID UTF-8 bytes, independent of replica-local FAISS labels.
+and fails on a missing mapping. Search adaptively requests enough candidates to
+resolve an equal-score top-K boundary by exact external vector-ID UTF-8 bytes,
+independent of replica-local FAISS labels. Candidate expansion is bounded at
+10,000 entries; a larger unresolved tie fails explicitly instead of returning a
+nondeterministic subset.

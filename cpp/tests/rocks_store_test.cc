@@ -48,7 +48,11 @@ TEST(RocksStoreTest, AtomicallyStoresBothMappingsAndExactRetry) {
   veclet::storage::v1::StoredRecord by_local_id;
   ASSERT_TRUE(store.GetByLocalIndexId(1, &by_local_id));
   EXPECT_EQ(by_local_id.record().vector_id(), "vec_1");
+  std::string external_id;
+  ASSERT_TRUE(store.GetVectorIdByLocalIndexId(1, &external_id));
+  EXPECT_EQ(external_id, "vec_1");
   EXPECT_FALSE(store.Get("missing", nullptr));
+  EXPECT_FALSE(store.GetVectorIdByLocalIndexId(99, nullptr));
   EXPECT_FALSE(store.GetByLocalIndexId(99, nullptr));
 }
 

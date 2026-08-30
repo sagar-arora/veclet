@@ -126,7 +126,8 @@ TEST(FlatIndexTest, InvalidInputHandling) {
   std::vector<float> valid_query = {1.0f, 2.0f};
   EXPECT_THROW(index.Search(valid_query, 0), std::invalid_argument);
   EXPECT_THROW(index.Search(valid_query, -1), std::invalid_argument);
-  EXPECT_THROW(index.Search(valid_query, 1001), std::invalid_argument);
+  EXPECT_NO_THROW(index.Search(valid_query, 1001));
+  EXPECT_THROW(index.Search(valid_query, 10001), std::invalid_argument);
 }
 
 TEST(FlatIndexTest, RejectsNonPositiveAndDuplicateLabels) {
