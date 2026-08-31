@@ -33,7 +33,8 @@ shaped vector service but do not want to become operators of a complex data
 platform before they can evaluate or ship their application.
 
 See [the architecture overview](docs/architecture.md) for the component and
-data model, and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change.
+data model, [the design index](docs/designs/README.md) for detailed proposals,
+and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change.
 
 ## Development
 

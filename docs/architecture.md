@@ -91,6 +91,9 @@ The workflow and configuration model remain provider-neutral across AWS, GCP,
 Azure, Oracle Cloud, and bare metal; provider-specific modules are thin,
 optional infrastructure adapters.
 
+The managed-cloud, existing-instance, and manual-host workflows are specified
+in [Design 0001: Cloud-neutral small-cluster deployment](designs/0001-cloud-neutral-small-cluster-deployment.md).
+
 Capacity profiles cover representative datasets in the 10-million,
 20-million, and approximately 100-million-vector ranges. A vector count alone
 is never a capacity guarantee: every profile and benchmark states dimension,
