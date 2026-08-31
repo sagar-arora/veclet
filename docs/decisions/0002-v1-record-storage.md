@@ -21,12 +21,12 @@ Each logical-shard replica owns one RocksDB database with this layout:
 | --- | --- | --- |
 | `records` | External vector-ID UTF-8 bytes | Deterministic `veclet.storage.v1.StoredRecord` protobuf |
 | `index_ids` | Eight-byte big-endian positive local index ID | External vector-ID UTF-8 bytes |
-| default | Small fixed system keys | Schema version, next local index ID, and recovery state |
+| default | Small fixed system keys | Schema version and next local index ID |
 
 `StoredRecord` contains the public `VectorRecord` plus a positive, shard-local
 `int64 local_index_id` used only as the FAISS label. Allocating a new local ID,
 writing both mappings, and advancing the counter occur in one RocksDB
-`WriteBatch`. Replicas may allocate different local labels because queries
+transaction. Replicas may allocate different local labels because queries
 resolve labels locally before returning the same external string ID.
 
 Float32 is the canonical authoritative embedding because the initial FAISS

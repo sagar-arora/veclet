@@ -19,6 +19,9 @@ Veclet is a minimal distributed vector database built around FAISS. Keep the arc
 - Source partitions are ingestion concepts and never query-routing concepts.
 - Standalone mode does not require Kubernetes, Istio, Kafka, Airflow, or an object-store service.
 - Standalone and clustered modes use the same protobuf contracts and C++ data plane.
+- Deployment simplicity is a product invariant: maintain documented single-node and three-node paths that can reach a working insert and search within minutes after ordinary Linux infrastructure is ready.
+- Core configuration and runtime behavior remain cloud-neutral. AWS, GCP, Azure, Oracle Cloud, Kubernetes, and bare-metal integrations are optional provisioning or orchestration adapters.
+- Capacity claims must state vector dimension, index configuration, replication, CPU, RAM, disk, workload, and recovery assumptions; never imply that a record count alone guarantees a safe deployment.
 - Do not add a service, coordinator, metadata system, query language, custom WAL, or custom consensus protocol without explicit approval and a written architecture decision.
 
 ## Working agreements

@@ -55,3 +55,54 @@ target_link_libraries(veclet_proto_contract_test
 
 include(GoogleTest)
 gtest_discover_tests(veclet_proto_contract_test DISCOVERY_TIMEOUT 30)
+
+find_package(OpenMP REQUIRED)
+find_package(faiss CONFIG REQUIRED)
+find_package(RocksDB CONFIG REQUIRED)
+
+add_library(
+  veclet_index STATIC
+  src/index/flat_index.cc
+  src/index/ivf_flat_index.cc
+  src/index/hnsw_flat_index.cc)
+target_include_directories(
+  veclet_index
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+target_link_libraries(veclet_index PUBLIC faiss)
+target_compile_features(veclet_index PUBLIC cxx_std_20)
+
+add_executable(veclet_flat_index_test tests/flat_index_test.cc)
+target_link_libraries(veclet_flat_index_test
+                      PRIVATE veclet_index GTest::gtest_main)
+gtest_discover_tests(veclet_flat_index_test DISCOVERY_TIMEOUT 30)
+
+add_executable(veclet_ivf_flat_index_test tests/ivf_flat_index_test.cc)
+target_link_libraries(veclet_ivf_flat_index_test
+                      PRIVATE veclet_index GTest::gtest_main)
+gtest_discover_tests(veclet_ivf_flat_index_test DISCOVERY_TIMEOUT 30)
+
+add_executable(veclet_hnsw_flat_index_test tests/hnsw_flat_index_test.cc)
+target_link_libraries(veclet_hnsw_flat_index_test
+                      PRIVATE veclet_index GTest::gtest_main)
+gtest_discover_tests(veclet_hnsw_flat_index_test DISCOVERY_TIMEOUT 30)
+
+add_library(
+  veclet_shard STATIC
+  src/shard/rocks_store.cc
+  src/shard/local_shard.cc)
+target_include_directories(
+  veclet_shard
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+target_link_libraries(veclet_shard
+                      PUBLIC veclet_proto veclet_index RocksDB::rocksdb)
+target_compile_features(veclet_shard PUBLIC cxx_std_20)
+
+add_executable(veclet_rocks_store_test tests/rocks_store_test.cc)
+target_link_libraries(veclet_rocks_store_test
+                      PRIVATE veclet_shard GTest::gtest_main)
+gtest_discover_tests(veclet_rocks_store_test DISCOVERY_TIMEOUT 30)
+
+add_executable(veclet_local_shard_test tests/local_shard_test.cc)
+target_link_libraries(veclet_local_shard_test
+                      PRIVATE veclet_shard GTest::gtest_main)
+gtest_discover_tests(veclet_local_shard_test DISCOVERY_TIMEOUT 30)

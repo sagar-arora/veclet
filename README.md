@@ -18,6 +18,19 @@ are still being established.
   data plane.
 - Kubernetes and service-mesh integrations remain optional orchestration
   layers.
+- Deployment simplicity is a product feature: one developer should be able to
+  take one or three ordinary Linux VMs from infrastructure-ready to a working
+  insert-and-search service within minutes, using the same documented workflow
+  on AWS, GCP, Azure, Oracle Cloud, or bare metal.
+- Opinionated deployment profiles target workloads in the tens of millions of
+  vectors and provide a clear path toward roughly 100 million, without forcing
+  users to operate a large collection of supporting systems. Published sizing
+  always states vector dimension, index type, replication, memory, disk, and
+  workload assumptions.
+
+Veclet is intended for indie developers and small teams that need a production-
+shaped vector service but do not want to become operators of a complex data
+platform before they can evaluate or ship their application.
 
 See [the architecture overview](docs/architecture.md) for the component and
 data model, and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change.
