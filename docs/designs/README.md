@@ -22,6 +22,7 @@ reconsidered casually.
 | Design | Status | Scope |
 | --- | --- | --- |
 | [0001: Cloud-neutral small-cluster deployment](0001-cloud-neutral-small-cluster-deployment.md) | Draft | Managed cloud, existing-host, and manual deployment modes; six-node placement and networking |
+| [0002: DataNode shard registry and RPC fencing](0002-data-node-shard-registry.md) | Draft | Monotonic local assignment installation, exact unregister, and lifetime-safe RPC lookup |
 
 Each new design should state intended behavior, non-goals, user configuration,
 component ownership, state transitions, failure handling, security,

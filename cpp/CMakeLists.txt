@@ -102,6 +102,18 @@ target_link_libraries(veclet_rocks_store_test
                       PRIVATE veclet_shard GTest::gtest_main)
 gtest_discover_tests(veclet_rocks_store_test DISCOVERY_TIMEOUT 30)
 
+add_library(veclet_node_registry STATIC src/node/shard_registry.cc)
+target_include_directories(
+  veclet_node_registry
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+target_link_libraries(veclet_node_registry PUBLIC veclet_proto veclet_shard)
+target_compile_features(veclet_node_registry PUBLIC cxx_std_20)
+
+add_executable(veclet_shard_registry_test tests/shard_registry_test.cc)
+target_link_libraries(veclet_shard_registry_test
+                      PRIVATE veclet_node_registry GTest::gtest_main)
+gtest_discover_tests(veclet_shard_registry_test DISCOVERY_TIMEOUT 30)
+
 add_executable(veclet_local_shard_test tests/local_shard_test.cc)
 target_link_libraries(veclet_local_shard_test
                       PRIVATE veclet_shard GTest::gtest_main)
