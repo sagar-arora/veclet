@@ -11,9 +11,10 @@ logical-shard identity to one READY `LocalShard`, immutable generation ID, and
 controller-issued placement epoch.
 
 The controller placement stream is the only future writer of this registry.
-`SearchShard` and `BatchInsert` may look up and validate placements but cannot
-create, advance, or replace them. The current in-process API is a bootstrap and
-test boundary until that authenticated channel exists.
+`SearchShard` looks up and validates placements but cannot create, advance, or
+replace them. `BatchInsert` will use the same boundary when it is implemented.
+The current in-process API is a bootstrap and test boundary until that
+authenticated channel exists.
 
 ## Terms and concrete lifecycle
 
@@ -121,6 +122,34 @@ after the registry lock is released. RPC code checks `active` before starting
 work and again before acknowledging. A replacement revokes the old handle before
 publishing its successor in the local map.
 
+## `SearchShard` behavior
+
+`SearchShard` is the internal QueryNode-to-DataNode read path. Its request names
+one exact `ShardPlacement`; it cannot install a placement by presenting a larger
+epoch. The handler proceeds in this order:
+
+1. Reject cancellation, an encoded request over 4 MiB, a missing placement,
+   non-positive generation or placement epoch, or `k` outside 1–1,000.
+2. Look up `(collection_id, shard_id)` in the local registry.
+3. Return `NOT_FOUND` when this DataNode has no placement for that key, or
+   `FAILED_PRECONDITION` when its generation or placement epoch differs.
+4. Validate the query dimension, finite values, and non-zero cosine norm.
+5. Search the `LocalShard` without holding the registry mutex.
+6. Recheck cancellation and the placement handle before constructing a
+   successful response. If replacement won the race, discard the result and
+   return `FAILED_PRECONDITION`.
+
+The final active check is the read's placement linearization point. If it occurs
+before replacement, the read belongs to the old placement; if revocation occurs
+first, the old result is not acknowledged. `LocalShard::Search` and FAISS are
+synchronous and cannot currently be interrupted halfway through a call, so the
+handler checks cancellation immediately before and after that bounded local
+work. The caller still owns and propagates the end-to-end gRPC deadline.
+
+Unexpected FAISS or RocksDB failures return `INTERNAL`. Invalid query data
+returns `INVALID_ARGUMENT`. A successful response echoes the registry's exact
+placement rather than trusting a separately constructed response value.
+
 ## Failure boundary
 
 Revocation prevents new local RPCs from acquiring an old registry entry and lets
@@ -139,3 +168,7 @@ by Design 0001.
 - Repeated exact installation is idempotent.
 - Conflicting epoch reuse and generation rollback fail explicitly.
 - Replacement and destruction make previously returned handles inactive.
+- `SearchShard` validates documented request bounds and returns deterministic
+  gRPC status categories.
+- A placement replacement during search prevents the old result from being
+  acknowledged.

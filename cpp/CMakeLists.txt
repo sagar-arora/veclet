@@ -118,3 +118,17 @@ add_executable(veclet_local_shard_test tests/local_shard_test.cc)
 target_link_libraries(veclet_local_shard_test
                       PRIVATE veclet_shard GTest::gtest_main)
 gtest_discover_tests(veclet_local_shard_test DISCOVERY_TIMEOUT 30)
+
+add_library(
+  veclet_node STATIC
+  src/node/data_node.cc)
+target_include_directories(
+  veclet_node
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+target_link_libraries(veclet_node PUBLIC veclet_node_registry gRPC::grpc++)
+target_compile_features(veclet_node PUBLIC cxx_std_20)
+
+add_executable(veclet_data_node_test tests/data_node_test.cc)
+target_link_libraries(veclet_data_node_test
+                      PRIVATE veclet_node GTest::gtest_main)
+gtest_discover_tests(veclet_data_node_test DISCOVERY_TIMEOUT 30)
