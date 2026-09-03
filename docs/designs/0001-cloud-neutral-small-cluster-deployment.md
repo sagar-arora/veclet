@@ -128,7 +128,7 @@ existing_instances:
 
 The host list is deployment input, not the runtime membership database. After
 bootstrap, nodes register with the controller and membership is maintained by
-assignment state and heartbeats.
+placement state and heartbeats.
 
 ## Node bootstrap and discovery
 
@@ -180,7 +180,7 @@ cluster.
 ## Placement
 
 The controller owns desired placement. DataNodes report capacity and current
-replica state, but they do not choose their own shards or increment assignment
+replica state, but they do not choose their own shards or increment placement
 epochs.
 
 Placement follows these rules in order:
@@ -204,21 +204,21 @@ placement is:
 | 4 and 10 | Node 5, zone C | Node 4, zone B |
 | 5 and 11 | Node 6, zone C | Node 2, zone A |
 
-Real placement uses measured capacity and existing assignments; the table is
+Real placement uses measured capacity and existing placements; the table is
 not a hard-coded ring.
 
-## Assignment lifecycle
+## Replica placement lifecycle
 
-Each physical replica has a controller-issued assignment epoch. A normal
+Each physical replica has a controller-issued placement epoch. A normal
 placement transition is:
 
 | State | Routable | Meaning |
 | --- | --- | --- |
-| `ASSIGNED` | no | Controller selected a node and issued a newer assignment epoch |
+| `PLANNED` | no | Controller selected a node and issued a newer placement epoch |
 | `RECOVERING` | no | DataNode is creating or copying authoritative state and preparing FAISS |
-| `READY` | yes | Required state and artifacts were verified for the exact assignment |
+| `READY` | yes | Required state and artifacts were verified for the exact placement |
 | `DRAINING` | no for new work | Existing bounded work is finishing while replacement safety is established |
-| `REVOKED` | no | The assignment can no longer accept work |
+| `REVOKED` | no | The placement can no longer accept work |
 
 Only `READY` replicas enter routing. The controller publishes a replacement
 only after it has the required verified replicas, and it does not remove a
@@ -226,7 +226,7 @@ draining replica until replication safety is restored.
 
 If a node stops heartbeating, the controller first marks it suspect, then
 unavailable after the configured failure policy. Searches may use remaining
-READY replicas. A replacement receives a newer assignment epoch and remains
+READY replicas. A replacement receives a newer placement epoch and remains
 outside routing until recovery completes.
 
 ## Replication boundary
@@ -245,7 +245,7 @@ barrier before becoming `READY`.
 
 Concurrent conflicting inserts, quorum acknowledgement, missed-write repair,
 forced failover during a network partition, and replica catch-up are not solved
-by assignment epochs. Veclet must not claim replicated durability until a
+by placement epochs. Veclet must not claim replicated durability until a
 separate accepted replication design defines those cases and tests them.
 
 ## Networking
@@ -256,7 +256,7 @@ controller connection, while other internal paths reflect actual data flow:
 | Source | Destination | Purpose |
 | --- | --- | --- |
 | Client or load balancer | QueryNodes | Public search API |
-| DataNodes and QueryNodes | Controller | Registration, heartbeat, assignment, and routing streams |
+| DataNodes and QueryNodes | Controller | Registration, heartbeat, placement, and routing streams |
 | QueryNodes | DataNodes | Shard searches |
 | Insert coordinator | DataNodes | Shard inserts and retries |
 | DataNodes | DataNodes | Approved snapshot or replica-bootstrap transfer |
@@ -266,7 +266,7 @@ Controller and DataNode endpoints remain private. In a cloud VPC, the simplest
 initial rule is a cluster security group that permits only documented internal
 ports from itself, while the load balancer reaches only QueryNode client ports.
 The implementation should use one long-lived bidirectional control stream for
-heartbeats and assignments rather than a separate public heartbeat port.
+heartbeats and placements rather than a separate public heartbeat port.
 
 All internal connections authenticate workload identity and encrypt traffic.
 Raw cloud credentials and join tokens never appear in protobuf messages, logs,
@@ -281,7 +281,8 @@ index type and parameters, replication factor, CPU, RAM, disk, ingest and query
 rates, payload size, and recovery headroom. A record count or machine type alone
 is never a capacity guarantee.
 
-Before installation or assignment, preflight checks validate at least:
+Before software installation or shard placement, preflight checks validate at
+least:
 
 - private address reachability and required ports;
 - stable node identity and distinct failure domains;
@@ -297,7 +298,7 @@ rather than silently weakening replication or durability.
 ## Observability
 
 Every process emits structured logs and bounded-cardinality metrics for
-registration, heartbeat state, assignment transitions, recovery progress,
+registration, heartbeat state, placement transitions, recovery progress,
 readiness, storage capacity, and RPC outcomes. Deployment adapters may connect
 those signals to Prometheus, Grafana, or an OpenTelemetry-compatible collector
 without making a particular vendor part of core correctness.

@@ -16,9 +16,9 @@ namespace veclet::node {
 
 class ShardRegistry {
 public:
-  class Assignment {
+  class Placement {
   public:
-    const veclet::v1::ShardTarget &target() const { return target_; }
+    const veclet::v1::ShardPlacement &placement() const { return placement_; }
     const std::shared_ptr<shard::LocalShard> &shard() const { return shard_; }
     bool active() const noexcept {
       return active_.load(std::memory_order_acquire);
@@ -27,16 +27,16 @@ public:
   private:
     friend class ShardRegistry;
 
-    Assignment(veclet::v1::ShardTarget target,
-               std::shared_ptr<shard::LocalShard> shard);
+    Placement(veclet::v1::ShardPlacement placement,
+              std::shared_ptr<shard::LocalShard> shard);
     void Revoke() noexcept { active_.store(false, std::memory_order_release); }
 
-    veclet::v1::ShardTarget target_;
+    veclet::v1::ShardPlacement placement_;
     std::shared_ptr<shard::LocalShard> shard_;
     std::atomic<bool> active_{true};
   };
 
-  using AssignmentHandle = std::shared_ptr<const Assignment>;
+  using PlacementHandle = std::shared_ptr<const Placement>;
 
   ShardRegistry() = default;
   ~ShardRegistry();
@@ -46,30 +46,30 @@ public:
   ShardRegistry(ShardRegistry &&) = delete;
   ShardRegistry &operator=(ShardRegistry &&) = delete;
 
-  // Register installs a READY local assignment. Repeating the exact target
-  // with the same LocalShard is idempotent. A replacement requires a strictly
-  // newer assignment epoch and may not move generation backward.
-  void Register(const veclet::v1::ShardTarget &target,
-                std::shared_ptr<shard::LocalShard> shard);
+  // Install places a READY LocalShard on this DataNode. Repeating the exact
+  // placement with the same LocalShard is idempotent. A replacement requires
+  // a strictly newer placement epoch and may not move generation backward.
+  void Install(const veclet::v1::ShardPlacement &placement,
+               std::shared_ptr<shard::LocalShard> shard);
 
-  // Unregister revokes and removes only the exact registered target. A stale
-  // command returns false and cannot remove a newer assignment.
-  bool Unregister(const veclet::v1::ShardTarget &target);
+  // Remove revokes and removes only the exact current placement. A stale
+  // command returns false and cannot remove a newer placement.
+  bool Remove(const veclet::v1::ShardPlacement &placement);
 
   // Lookup returns a lifetime-safe handle without retaining the registry lock.
   // RPC owners must check active() before work and again before acknowledging.
-  AssignmentHandle Lookup(const std::string &collection_id,
-                          uint32_t shard_id) const;
+  PlacementHandle Lookup(const std::string &collection_id,
+                         uint32_t shard_id) const;
 
   size_t size() const;
 
 private:
-  static void ValidateTarget(const veclet::v1::ShardTarget &target);
+  static void ValidatePlacement(const veclet::v1::ShardPlacement &placement);
   static std::string MakeKey(const std::string &collection_id,
                              uint32_t shard_id);
 
   mutable std::shared_mutex mutex_;
-  std::unordered_map<std::string, std::shared_ptr<Assignment>> assignments_;
+  std::unordered_map<std::string, std::shared_ptr<Placement>> placements_;
 };
 
 } // namespace veclet::node

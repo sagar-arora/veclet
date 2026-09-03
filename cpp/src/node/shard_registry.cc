@@ -20,38 +20,39 @@ bool IsValidCollectionId(const std::string &collection_id) {
                      });
 }
 
-bool TargetsEqual(const veclet::v1::ShardTarget &lhs,
-                  const veclet::v1::ShardTarget &rhs) {
+bool PlacementsEqual(const veclet::v1::ShardPlacement &lhs,
+                     const veclet::v1::ShardPlacement &rhs) {
   return lhs.collection_id() == rhs.collection_id() &&
          lhs.generation_id() == rhs.generation_id() &&
          lhs.shard_id() == rhs.shard_id() &&
-         lhs.assignment_epoch() == rhs.assignment_epoch();
+         lhs.placement_epoch() == rhs.placement_epoch();
 }
 
 } // namespace
 
-ShardRegistry::Assignment::Assignment(veclet::v1::ShardTarget target,
-                                      std::shared_ptr<shard::LocalShard> shard)
-    : target_(std::move(target)), shard_(std::move(shard)) {}
+ShardRegistry::Placement::Placement(veclet::v1::ShardPlacement placement,
+                                    std::shared_ptr<shard::LocalShard> shard)
+    : placement_(std::move(placement)), shard_(std::move(shard)) {}
 
 ShardRegistry::~ShardRegistry() {
   std::unique_lock lock(mutex_);
-  for (auto &entry : assignments_) {
+  for (auto &entry : placements_) {
     entry.second->Revoke();
   }
-  assignments_.clear();
+  placements_.clear();
 }
 
-void ShardRegistry::ValidateTarget(const veclet::v1::ShardTarget &target) {
-  if (!IsValidCollectionId(target.collection_id())) {
+void ShardRegistry::ValidatePlacement(
+    const veclet::v1::ShardPlacement &placement) {
+  if (!IsValidCollectionId(placement.collection_id())) {
     throw std::invalid_argument(
         "collection_id must match [a-z][a-z0-9-]{0,62}");
   }
-  if (target.generation_id() == 0) {
+  if (placement.generation_id() == 0) {
     throw std::invalid_argument("generation_id must be positive");
   }
-  if (target.assignment_epoch() == 0) {
-    throw std::invalid_argument("assignment_epoch must be positive");
+  if (placement.placement_epoch() == 0) {
+    throw std::invalid_argument("placement_epoch must be positive");
   }
 }
 
@@ -60,62 +61,65 @@ std::string ShardRegistry::MakeKey(const std::string &collection_id,
   return collection_id + ':' + std::to_string(shard_id);
 }
 
-void ShardRegistry::Register(const veclet::v1::ShardTarget &target,
-                             std::shared_ptr<shard::LocalShard> shard) {
-  ValidateTarget(target);
+void ShardRegistry::Install(const veclet::v1::ShardPlacement &placement,
+                            std::shared_ptr<shard::LocalShard> shard) {
+  ValidatePlacement(placement);
   if (!shard) {
     throw std::invalid_argument("LocalShard pointer must not be null");
   }
 
-  const std::string key = MakeKey(target.collection_id(), target.shard_id());
+  const std::string key =
+      MakeKey(placement.collection_id(), placement.shard_id());
   std::unique_lock lock(mutex_);
-  const auto existing = assignments_.find(key);
-  if (existing == assignments_.end()) {
-    assignments_.emplace(key, std::shared_ptr<Assignment>(
-                                  new Assignment(target, std::move(shard))));
+  const auto existing = placements_.find(key);
+  if (existing == placements_.end()) {
+    placements_.emplace(key, std::shared_ptr<Placement>(
+                                 new Placement(placement, std::move(shard))));
     return;
   }
 
-  const std::shared_ptr<Assignment> &current = existing->second;
-  if (target.assignment_epoch() < current->target().assignment_epoch()) {
-    throw std::domain_error("stale assignment epoch cannot replace the current "
-                            "shard assignment");
+  const std::shared_ptr<Placement> &current = existing->second;
+  if (placement.placement_epoch() < current->placement().placement_epoch()) {
+    throw std::domain_error(
+        "stale placement epoch cannot replace the current shard placement");
   }
-  if (target.assignment_epoch() == current->target().assignment_epoch()) {
-    if (!TargetsEqual(target, current->target()) || shard != current->shard()) {
+  if (placement.placement_epoch() == current->placement().placement_epoch()) {
+    if (!PlacementsEqual(placement, current->placement()) ||
+        shard != current->shard()) {
       throw std::domain_error(
-          "assignment epoch conflicts with the current shard assignment");
+          "placement epoch conflicts with the current shard placement");
     }
     return;
   }
-  if (target.generation_id() < current->target().generation_id()) {
+  if (placement.generation_id() < current->placement().generation_id()) {
     throw std::domain_error(
-        "newer assignment epoch cannot move generation backward");
+        "newer placement epoch cannot move generation backward");
   }
 
   auto replacement =
-      std::shared_ptr<Assignment>(new Assignment(target, std::move(shard)));
+      std::shared_ptr<Placement>(new Placement(placement, std::move(shard)));
   current->Revoke();
   existing->second = std::move(replacement);
 }
 
-bool ShardRegistry::Unregister(const veclet::v1::ShardTarget &target) {
-  ValidateTarget(target);
-  const std::string key = MakeKey(target.collection_id(), target.shard_id());
+bool ShardRegistry::Remove(const veclet::v1::ShardPlacement &placement) {
+  ValidatePlacement(placement);
+  const std::string key =
+      MakeKey(placement.collection_id(), placement.shard_id());
 
   std::unique_lock lock(mutex_);
-  const auto existing = assignments_.find(key);
-  if (existing == assignments_.end() ||
-      !TargetsEqual(target, existing->second->target())) {
+  const auto existing = placements_.find(key);
+  if (existing == placements_.end() ||
+      !PlacementsEqual(placement, existing->second->placement())) {
     return false;
   }
 
   existing->second->Revoke();
-  assignments_.erase(existing);
+  placements_.erase(existing);
   return true;
 }
 
-ShardRegistry::AssignmentHandle
+ShardRegistry::PlacementHandle
 ShardRegistry::Lookup(const std::string &collection_id,
                       uint32_t shard_id) const {
   if (!IsValidCollectionId(collection_id)) {
@@ -125,16 +129,16 @@ ShardRegistry::Lookup(const std::string &collection_id,
 
   const std::string key = MakeKey(collection_id, shard_id);
   std::shared_lock lock(mutex_);
-  const auto assignment = assignments_.find(key);
-  if (assignment == assignments_.end()) {
+  const auto placement = placements_.find(key);
+  if (placement == placements_.end()) {
     return nullptr;
   }
-  return assignment->second;
+  return placement->second;
 }
 
 size_t ShardRegistry::size() const {
   std::shared_lock lock(mutex_);
-  return assignments_.size();
+  return placements_.size();
 }
 
 } // namespace veclet::node

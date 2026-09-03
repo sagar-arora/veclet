@@ -72,7 +72,7 @@ Review findings must identify a concrete failure scenario and the violated contr
 
 - Flag state with multiple writers unless ordering, conflict resolution, and the authoritative owner are explicit.
 - Flag derived state that can outlive or override newer authoritative state.
-- Require epochs, versions, leases, or fencing tokens where a delayed actor could mutate a newer assignment or generation.
+- Require epochs, versions, leases, or fencing tokens where a delayed actor could mutate a newer placement or generation.
 - Require deterministic placement for identical inputs and stable tie-breaking where ordering affects state.
 
 ### State machines and crash consistency

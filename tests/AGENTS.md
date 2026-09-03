@@ -25,7 +25,7 @@ Before claiming resilience, cover relevant points from this matrix:
 - DataNode termination at RF=1 and RF=2;
 - controller unavailability and restart;
 - RPC timeout, cancellation, duplicate, delay, and partial response;
-- stale routing, generation, lease, and assignment epochs;
+- stale routing, generation, lease, and placement epochs;
 - crash before/after RocksDB write, FAISS mutation, artifact publish, routing publish, replica acknowledgement, and Kafka offset commit;
 - corrupt, missing, partial, or incompatible artifacts;
 - drain and scale-in during active traffic or recovery.

@@ -8,8 +8,8 @@ option go_package = "github.com/sagar-arora/veclet/gen/go/veclet/v1;vecletv1";
 
 // DataService is the internal DataNode RPC boundary.
 service DataService {
-  // SearchShard is read-only and safe to retry for the same target within the
-  // original deadline. A stale generation or assignment is rejected.
+  // SearchShard is read-only and safe to retry for the same placement within
+  // the original deadline. A stale generation or placement is rejected.
   rpc SearchShard(SearchShardRequest) returns (SearchShardResponse);
 
   // BatchInsert durably inserts a batch. It is safe to retry when
@@ -17,8 +17,8 @@ service DataService {
   rpc BatchInsert(BatchInsertRequest) returns (BatchInsertResponse);
 }
 
-// ShardTarget fences an RPC to one physical assignment of a logical shard.
-message ShardTarget {
+// ShardPlacement fences an RPC to one physical placement of a logical shard.
+message ShardPlacement {
   string collection_id = 1;
 
   // generation_id is positive and identifies immutable collection artifacts.
@@ -27,12 +27,12 @@ message ShardTarget {
   // shard_id is zero-based and less than Collection.logical_shards.
   uint32 shard_id = 3;
 
-  // assignment_epoch is positive and rejects work for superseded placements.
-  uint64 assignment_epoch = 4;
+  // placement_epoch is positive and rejects work for superseded placements.
+  uint64 placement_epoch = 4;
 }
 
 message SearchShardRequest {
-  ShardTarget target = 1;
+  ShardPlacement placement = 1;
 
   // query_vector and k follow SearchRequest validation.
   repeated float query_vector = 2;
@@ -44,12 +44,12 @@ message SearchShardResponse {
   // ordered by ascending vector_id.
   repeated Neighbor neighbors = 1;
 
-  // target echoes the assignment that produced the response.
-  ShardTarget target = 2;
+  // placement echoes the placement that produced the response.
+  ShardPlacement placement = 2;
 }
 
 message BatchInsertRequest {
-  ShardTarget target = 1;
+  ShardPlacement placement = 1;
 
   // records contains 1 to 256 unique vector IDs. The complete encoded request
   // must not exceed 4 MiB. All records are validated before durable mutation.
@@ -57,8 +57,8 @@ message BatchInsertRequest {
 }
 
 message BatchInsertResponse {
-  // target echoes the assignment that accepted the mutation.
-  ShardTarget target = 1;
+  // placement echoes the placement that accepted the mutation.
+  ShardPlacement placement = 1;
 
   // inserted_records is the number of newly durable records.
   uint32 inserted_records = 2;

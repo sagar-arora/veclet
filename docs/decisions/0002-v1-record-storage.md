@@ -37,7 +37,7 @@ authoritative float32 embedding.
 
 V1 has no `partition_column`. Source partitions belong to ingestion checkpoint
 and replay state, never the record or query-routing contract. Logical-shard
-assignment is derived deterministically from collection identity and external
+mapping is derived deterministically from collection identity and external
 vector-ID bytes.
 
 ## Consequences

@@ -67,7 +67,7 @@ last-known-good snapshot during temporary controller unavailability.
 Placement is deterministic for identical inputs and keeps logical-shard
 identity separate from DataNode identity. Only verified READY replicas enter
 routing. Drain and scale-in first establish the required replication factor,
-then remove the old placement. Assignment epochs or fencing tokens prevent
+then remove the old placement. Placement epochs or fencing tokens prevent
 delayed workers from publishing stale state.
 
 RocksDB/FAISS mutations, generation publication, routing publication, and

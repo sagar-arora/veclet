@@ -15,14 +15,14 @@
 namespace veclet::node {
 namespace {
 
-veclet::v1::ShardTarget MakeTarget(uint64_t generation_id,
-                                   uint64_t assignment_epoch) {
-  veclet::v1::ShardTarget target;
-  target.set_collection_id("products");
-  target.set_generation_id(generation_id);
-  target.set_shard_id(2);
-  target.set_assignment_epoch(assignment_epoch);
-  return target;
+veclet::v1::ShardPlacement MakePlacement(uint64_t generation_id,
+                                         uint64_t placement_epoch) {
+  veclet::v1::ShardPlacement placement;
+  placement.set_collection_id("products");
+  placement.set_generation_id(generation_id);
+  placement.set_shard_id(2);
+  placement.set_placement_epoch(placement_epoch);
+  return placement;
 }
 
 std::shared_ptr<shard::LocalShard>
@@ -35,23 +35,23 @@ MakeShard(const testing::TempDirectory &temp_directory,
       std::make_unique<index::FlatIndex>(2, index::MetricType::kL2));
 }
 
-TEST(ShardRegistryTest, RegistersLooksUpAndRepeatsExactAssignment) {
+TEST(ShardRegistryTest, InstallsLooksUpAndRepeatsExactPlacement) {
   testing::TempDirectory temp_directory;
   ShardRegistry registry;
-  const veclet::v1::ShardTarget target = MakeTarget(7, 20);
+  const veclet::v1::ShardPlacement placement = MakePlacement(7, 20);
   const auto shard = MakeShard(temp_directory, "current");
 
-  registry.Register(target, shard);
-  registry.Register(target, shard);
+  registry.Install(placement, shard);
+  registry.Install(placement, shard);
 
   ASSERT_EQ(registry.size(), 1);
-  const ShardRegistry::AssignmentHandle assignment =
+  const ShardRegistry::PlacementHandle installed =
       registry.Lookup("products", 2);
-  ASSERT_NE(assignment, nullptr);
-  EXPECT_TRUE(assignment->active());
-  EXPECT_EQ(assignment->target().generation_id(), 7);
-  EXPECT_EQ(assignment->target().assignment_epoch(), 20);
-  EXPECT_EQ(assignment->shard(), shard);
+  ASSERT_NE(installed, nullptr);
+  EXPECT_TRUE(installed->active());
+  EXPECT_EQ(installed->placement().generation_id(), 7);
+  EXPECT_EQ(installed->placement().placement_epoch(), 20);
+  EXPECT_EQ(installed->shard(), shard);
   EXPECT_EQ(registry.Lookup("products", 3), nullptr);
 }
 
@@ -61,89 +61,87 @@ TEST(ShardRegistryTest, NewerEpochReplacesAndRevokesPreviousHandle) {
   const auto first_shard = MakeShard(temp_directory, "first");
   const auto second_shard = MakeShard(temp_directory, "second");
 
-  registry.Register(MakeTarget(7, 20), first_shard);
-  const ShardRegistry::AssignmentHandle previous =
+  registry.Install(MakePlacement(7, 20), first_shard);
+  const ShardRegistry::PlacementHandle previous =
       registry.Lookup("products", 2);
   ASSERT_NE(previous, nullptr);
 
-  registry.Register(MakeTarget(7, 21), second_shard);
+  registry.Install(MakePlacement(7, 21), second_shard);
 
   EXPECT_FALSE(previous->active());
-  const ShardRegistry::AssignmentHandle current =
-      registry.Lookup("products", 2);
+  const ShardRegistry::PlacementHandle current = registry.Lookup("products", 2);
   ASSERT_NE(current, nullptr);
   EXPECT_TRUE(current->active());
-  EXPECT_EQ(current->target().assignment_epoch(), 21);
+  EXPECT_EQ(current->placement().placement_epoch(), 21);
   EXPECT_EQ(current->shard(), second_shard);
 }
 
 TEST(ShardRegistryTest, RejectsStaleAndConflictingReplacement) {
   testing::TempDirectory temp_directory;
   ShardRegistry registry;
-  const veclet::v1::ShardTarget current = MakeTarget(7, 20);
+  const veclet::v1::ShardPlacement current = MakePlacement(7, 20);
   const auto current_shard = MakeShard(temp_directory, "current");
-  registry.Register(current, current_shard);
+  registry.Install(current, current_shard);
 
-  EXPECT_THROW(registry.Register(MakeTarget(7, 19), current_shard),
+  EXPECT_THROW(registry.Install(MakePlacement(7, 19), current_shard),
                std::domain_error);
-  EXPECT_THROW(registry.Register(MakeTarget(8, 20), current_shard),
+  EXPECT_THROW(registry.Install(MakePlacement(8, 20), current_shard),
                std::domain_error);
-  EXPECT_THROW(registry.Register(current, MakeShard(temp_directory,
-                                                    "same-epoch-other-shard")),
+  EXPECT_THROW(registry.Install(current, MakeShard(temp_directory,
+                                                   "same-epoch-other-shard")),
                std::domain_error);
-  EXPECT_THROW(registry.Register(MakeTarget(6, 21), current_shard),
+  EXPECT_THROW(registry.Install(MakePlacement(6, 21), current_shard),
                std::domain_error);
 
-  const ShardRegistry::AssignmentHandle assignment =
+  const ShardRegistry::PlacementHandle installed =
       registry.Lookup("products", 2);
-  ASSERT_NE(assignment, nullptr);
-  EXPECT_TRUE(assignment->active());
-  EXPECT_EQ(assignment->target().generation_id(), 7);
-  EXPECT_EQ(assignment->target().assignment_epoch(), 20);
+  ASSERT_NE(installed, nullptr);
+  EXPECT_TRUE(installed->active());
+  EXPECT_EQ(installed->placement().generation_id(), 7);
+  EXPECT_EQ(installed->placement().placement_epoch(), 20);
 }
 
-TEST(ShardRegistryTest, StaleUnregisterCannotRemoveNewerAssignment) {
+TEST(ShardRegistryTest, StaleRemoveCannotRemoveNewerPlacement) {
   testing::TempDirectory temp_directory;
   ShardRegistry registry;
-  const veclet::v1::ShardTarget old_target = MakeTarget(7, 20);
-  const veclet::v1::ShardTarget new_target = MakeTarget(7, 21);
-  registry.Register(old_target, MakeShard(temp_directory, "old"));
-  registry.Register(new_target, MakeShard(temp_directory, "new"));
+  const veclet::v1::ShardPlacement old_placement = MakePlacement(7, 20);
+  const veclet::v1::ShardPlacement new_placement = MakePlacement(7, 21);
+  registry.Install(old_placement, MakeShard(temp_directory, "old"));
+  registry.Install(new_placement, MakeShard(temp_directory, "new"));
 
-  EXPECT_FALSE(registry.Unregister(old_target));
-  const ShardRegistry::AssignmentHandle current =
-      registry.Lookup("products", 2);
+  EXPECT_FALSE(registry.Remove(old_placement));
+  const ShardRegistry::PlacementHandle current = registry.Lookup("products", 2);
   ASSERT_NE(current, nullptr);
   EXPECT_TRUE(current->active());
-  EXPECT_EQ(current->target().assignment_epoch(), 21);
+  EXPECT_EQ(current->placement().placement_epoch(), 21);
 
-  EXPECT_TRUE(registry.Unregister(new_target));
+  EXPECT_TRUE(registry.Remove(new_placement));
   EXPECT_FALSE(current->active());
   EXPECT_EQ(registry.Lookup("products", 2), nullptr);
   EXPECT_EQ(registry.size(), 0);
-  EXPECT_FALSE(registry.Unregister(new_target));
+  EXPECT_FALSE(registry.Remove(new_placement));
 }
 
-TEST(ShardRegistryTest, RejectsInvalidTargetsAndNullShard) {
+TEST(ShardRegistryTest, RejectsInvalidPlacementsAndNullShard) {
   testing::TempDirectory temp_directory;
   ShardRegistry registry;
   const auto shard = MakeShard(temp_directory, "valid");
 
-  veclet::v1::ShardTarget target = MakeTarget(7, 20);
-  target.set_collection_id("Products");
-  EXPECT_THROW(registry.Register(target, shard), std::invalid_argument);
+  veclet::v1::ShardPlacement placement = MakePlacement(7, 20);
+  placement.set_collection_id("Products");
+  EXPECT_THROW(registry.Install(placement, shard), std::invalid_argument);
 
-  target = MakeTarget(7, 20);
-  target.set_collection_id("products:other");
-  EXPECT_THROW(registry.Register(target, shard), std::invalid_argument);
+  placement = MakePlacement(7, 20);
+  placement.set_collection_id("products:other");
+  EXPECT_THROW(registry.Install(placement, shard), std::invalid_argument);
 
-  target = MakeTarget(0, 20);
-  EXPECT_THROW(registry.Register(target, shard), std::invalid_argument);
+  placement = MakePlacement(0, 20);
+  EXPECT_THROW(registry.Install(placement, shard), std::invalid_argument);
 
-  target = MakeTarget(7, 0);
-  EXPECT_THROW(registry.Register(target, shard), std::invalid_argument);
+  placement = MakePlacement(7, 0);
+  EXPECT_THROW(registry.Install(placement, shard), std::invalid_argument);
 
-  EXPECT_THROW(registry.Register(MakeTarget(7, 20), nullptr),
+  EXPECT_THROW(registry.Install(MakePlacement(7, 20), nullptr),
                std::invalid_argument);
   EXPECT_THROW(registry.Lookup("Products", 2), std::invalid_argument);
   EXPECT_EQ(registry.size(), 0);
@@ -151,25 +149,26 @@ TEST(ShardRegistryTest, RejectsInvalidTargetsAndNullShard) {
 
 TEST(ShardRegistryTest, DestructionRevokesOutstandingHandles) {
   testing::TempDirectory temp_directory;
-  ShardRegistry::AssignmentHandle assignment;
+  ShardRegistry::PlacementHandle placement;
   {
     ShardRegistry registry;
-    registry.Register(MakeTarget(7, 20), MakeShard(temp_directory, "current"));
-    assignment = registry.Lookup("products", 2);
-    ASSERT_NE(assignment, nullptr);
-    EXPECT_TRUE(assignment->active());
+    registry.Install(MakePlacement(7, 20),
+                     MakeShard(temp_directory, "current"));
+    placement = registry.Lookup("products", 2);
+    ASSERT_NE(placement, nullptr);
+    EXPECT_TRUE(placement->active());
   }
-  EXPECT_FALSE(assignment->active());
+  EXPECT_FALSE(placement->active());
 }
 
 TEST(ShardRegistryTest, ConcurrentLookupHandleIsRevokedSafely) {
   testing::TempDirectory temp_directory;
   ShardRegistry registry;
-  registry.Register(MakeTarget(7, 20), MakeShard(temp_directory, "current"));
+  registry.Install(MakePlacement(7, 20), MakeShard(temp_directory, "current"));
 
   std::barrier lookup_complete(2);
   std::barrier replacement_complete(2);
-  ShardRegistry::AssignmentHandle observed;
+  ShardRegistry::PlacementHandle observed;
   bool active_after_replacement = true;
   std::thread reader([&] {
     observed = registry.Lookup("products", 2);
@@ -179,18 +178,17 @@ TEST(ShardRegistryTest, ConcurrentLookupHandleIsRevokedSafely) {
   });
 
   lookup_complete.arrive_and_wait();
-  registry.Register(MakeTarget(7, 21),
-                    MakeShard(temp_directory, "replacement"));
+  registry.Install(MakePlacement(7, 21),
+                   MakeShard(temp_directory, "replacement"));
   replacement_complete.arrive_and_wait();
   reader.join();
 
   ASSERT_NE(observed, nullptr);
   EXPECT_FALSE(active_after_replacement);
-  const ShardRegistry::AssignmentHandle current =
-      registry.Lookup("products", 2);
+  const ShardRegistry::PlacementHandle current = registry.Lookup("products", 2);
   ASSERT_NE(current, nullptr);
   EXPECT_TRUE(current->active());
-  EXPECT_EQ(current->target().assignment_epoch(), 21);
+  EXPECT_EQ(current->placement().placement_epoch(), 21);
 }
 
 } // namespace

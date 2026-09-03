@@ -39,8 +39,8 @@ with the implementing RPC.
 | Stored vector | Exactly `dimension` finite float values; non-zero norm for cosine |
 | `k` | 1–1,000 |
 | `generation_id` | Positive |
-| `shard_id` | Zero-based and less than `logical_shards` |
-| `assignment_epoch` | Positive |
+| `ShardPlacement.shard_id` | Zero-based and less than `logical_shards` |
+| `placement_epoch` | Positive |
 | `VectorRecord.vector_id` | 1–256 UTF-8 bytes, exact and unnormalized; numeric IDs use canonical decimal strings |
 | `VectorRecord.version` | Positive |
 | `VectorRecord.embedding` | Canonical float32; exactly `dimension` finite values; non-zero norm for cosine |
@@ -55,8 +55,8 @@ and range violations are rejected with `INVALID_ARGUMENT` or
 | gRPC status | V1 use |
 | --- | --- |
 | `INVALID_ARGUMENT` | Malformed identity, boundary violation, unknown metric, invalid vector, or duplicate ID within one batch |
-| `NOT_FOUND` | Unknown collection or a shard target not loaded on the contacted DataNode |
-| `FAILED_PRECONDITION` | Stale generation/assignment or conflicting insert-only record version/payload |
+| `NOT_FOUND` | Unknown collection or a shard placement not loaded on the contacted DataNode |
+| `FAILED_PRECONDITION` | Stale generation/placement or conflicting insert-only record version/payload |
 | `RESOURCE_EXHAUSTED` | Encoded message, batch, queue, or fan-out bound exceeded |
 | `UNAVAILABLE` | A strict public search cannot reach every required shard |
 | `DEADLINE_EXCEEDED` / `CANCELLED` | The propagated request budget or cancellation ended the operation |
@@ -86,18 +86,25 @@ may retry only within that budget; a nested call never resets it.
 
 `Search` and `SearchShard` are read-only and retry-safe, although a new public
 `Search` attempt may observe a newly activated generation. `SearchShard` is
-fenced by generation and assignment epoch.
+fenced by generation and placement epoch.
 
 `BatchInsert` validates the whole batch before mutation and acknowledges only
 after RocksDB-authoritative state is durable. Replaying the exact same vector
 ID, version, embedding, and payload is a no-op counted in `duplicate_records`.
 A conflicting record at the same version, a different version for an existing
-insert-only record, or a stale generation/assignment rejects the entire batch
+insert-only record, or a stale generation/placement rejects the entire batch
 with `FAILED_PRECONDITION`; it does not partially apply the request.
 
-The target generation fences mutations against the active immutable base
+The placement generation fences mutations against the active immutable base
 artifact. `BatchInsert` updates authoritative local record state and its derived
 search structure; it never rewrites a published generation artifact.
+
+Before Veclet's first release, `ShardTarget` was renamed to `ShardPlacement`,
+its request/response fields were renamed from `target` to `placement`, and
+field 4 was renamed from `assignment_epoch` to `placement_epoch`. Message field
+numbers, wire types, validation, and fencing meaning did not change, so
+serialized messages remain wire-compatible; source code using the pre-release
+generated names must be updated.
 
 The durable RocksDB layout wraps this canonical record with a private local
 index ID without exposing RocksDB or FAISS labels in the RPC API. It is defined in

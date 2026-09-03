@@ -24,7 +24,7 @@ V1 fixes these behaviors:
   are higher-is-better;
 - equal scores use ascending vector-ID UTF-8 bytes as the deterministic
   tie-breaker;
-- generation and assignment epochs fence DataNode calls;
+- generation and placement epochs fence DataNode calls;
 - requests are deadline-bound, messages and fan-out inputs are bounded, and
   exact `BatchInsert` replay is idempotent;
 - collection identity is canonical and distinct from mutable display text;
@@ -44,3 +44,9 @@ Released fields cannot change meaning, units, signedness, or presence semantics
 in place. Removed numbers and names are reserved forever. An incompatible
 change requires a migration note and an explicit version transition rather
 than weakening the configured breaking check.
+
+Before the first release, `ShardTarget` was renamed to `ShardPlacement`, its
+request/response fields were renamed from `target` to `placement`, and field 4
+was renamed from `assignment_epoch` to `placement_epoch`. Field numbers and
+fencing semantics are unchanged, so the wire format remains compatible; only
+pre-release generated source names change.
