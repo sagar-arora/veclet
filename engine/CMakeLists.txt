@@ -59,6 +59,7 @@ gtest_discover_tests(veclet_proto_contract_test DISCOVERY_TIMEOUT 30)
 find_package(OpenMP REQUIRED)
 find_package(faiss CONFIG REQUIRED)
 find_package(RocksDB CONFIG REQUIRED)
+find_package(Threads REQUIRED)
 
 add_library(
   veclet_index STATIC
@@ -132,3 +133,23 @@ add_executable(veclet_data_node_test tests/data_node_test.cc)
 target_link_libraries(veclet_data_node_test
                       PRIVATE veclet_node GTest::gtest_main)
 gtest_discover_tests(veclet_data_node_test DISCOVERY_TIMEOUT 30)
+
+add_library(veclet_standalone_node STATIC
+            src/node/standalone_data_node.cc)
+target_include_directories(
+  veclet_standalone_node
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+target_link_libraries(veclet_standalone_node PUBLIC veclet_node)
+target_compile_features(veclet_standalone_node PUBLIC cxx_std_20)
+
+add_executable(veclet-datad src/node/data_node_main.cc)
+target_link_libraries(veclet-datad
+                      PRIVATE veclet_standalone_node Threads::Threads)
+
+add_executable(veclet_standalone_data_node_test
+               tests/standalone_data_node_test.cc)
+target_link_libraries(veclet_standalone_data_node_test
+                      PRIVATE veclet_standalone_node GTest::gtest_main)
+gtest_discover_tests(veclet_standalone_data_node_test DISCOVERY_TIMEOUT 30)
+
+add_test(NAME VecletDataNodeHelp COMMAND veclet-datad --help)

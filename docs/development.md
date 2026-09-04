@@ -58,6 +58,21 @@ locally; Veclet schemas are not uploaded to a remote generation service.
 Generated files live under `gen/` or `build/` and are deliberately untracked.
 Delete those directories whenever a fully clean regeneration is needed.
 
+After `make check-cpp` builds the engine, a loopback-only standalone DataNode
+can be started with:
+
+```sh
+build/engine/engine/veclet-datad \
+  --data-directory=/var/lib/veclet \
+  --collection-id=products \
+  --dimension=384 \
+  --metric=cosine
+```
+
+This early executable serves the internal `DataService` contract and standard
+gRPC health service. It is intentionally insecure and rejects non-loopback
+listeners; it is not yet a public or clustered deployment endpoint.
+
 ## CI contract
 
 Pull requests and pushes to `main` run independent documentation and repository
