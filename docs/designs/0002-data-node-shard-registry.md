@@ -10,10 +10,12 @@ names its current physical placement. The registry maps collection and
 logical-shard identity to one READY `LocalShard`, immutable generation ID, and
 controller-issued placement epoch.
 
-The controller placement stream is the only future writer of this registry.
+The DataNode replica manager is the only future writer of this registry. It
+acts on controller placement intent, but calls `Install` only after any remote
+artifacts are downloaded, verified, and opened as a READY `LocalShard`.
 `SearchShard` and `BatchInsert` look up and validate placements but cannot
 create, advance, or replace them. The current in-process API is a bootstrap and
-test boundary until that authenticated channel exists.
+test boundary until that authenticated control path exists.
 
 ## Terms and concrete lifecycle
 
@@ -28,18 +30,26 @@ This design uses a few names that are easy to confuse:
   placement epoch.
 - The **controller** is the future cluster-management component that decides
   placement. It watches the desired cluster state and tells DataNodes which
-  placements they may serve. It does not receive or proxy normal searches.
+  placements to prepare. It does not receive or proxy normal searches or
+  generation artifacts.
+- The DataNode **replica manager** performs slow, cancellable preparation such
+  as fetching an object-store manifest, restoring RocksDB, and loading or
+  rebuilding FAISS. Only this owner installs the resulting READY `LocalShard`
+  in the local registry.
 
 For a single-node developer deployment, setup code initially installs every
-placement locally. In a future cluster, the controller will send the same
-intent over an authenticated, reconnectable placement stream. That stream
-is not implemented by this design: `Install` and `Remove` are currently
-in-process bootstrap/test methods, not public client RPCs.
+placement locally. In a future cluster, the controller will send placement
+intent over an authenticated, reconnectable control stream. That stream and
+the replica manager are not implemented by this design: `Install` and `Remove`
+are currently in-process bootstrap/test methods, not controller commands or
+public client RPCs. Object-store preparation is specified separately in
+[Design 0004](0004-object-store-generation-recovery.md).
 
 ### When a placement is installed
 
-An install-placement update happens after the controller has made a placement
-decision and the node has a READY local replica. Typical events are:
+A local registry installation happens after the controller has made a
+placement decision and the DataNode replica manager has prepared a READY local
+replica. Typical events are:
 
 1. A user creates `products`; the controller divides it into logical shards
    and assigns each replica to eligible DataNodes.
@@ -50,18 +60,19 @@ decision and the node has a READY local replica. Typical events are:
    elsewhere.
 
 For example, if the controller decides that DataNode B should now serve
-`products` shard `3`, generation `7`, it sends B a placement with a new
-epoch, say `21`. B's local registry records a pointer to B's already-ready
-`LocalShard`. From then on, B can accept `SearchShard` requests that name that
-exact placement.
+`products` shard `3`, generation `7`, it asks B to prepare a placement with a
+new epoch, say `21`. B obtains and verifies the shard's artifacts, opens the
+`LocalShard`, and only then installs that pointer in its local registry. After B
+reports READY and the controller publishes the route, B can accept
+`SearchShard` requests that name that exact placement.
 
 ### When a placement is removed
 
-A remove-placement update happens when the controller no longer wants *that
-exact replica* to serve traffic: after a replacement is ready, while draining
-a node, when deleting a collection, or after a failed replica has been declared
-unavailable. The update names the full prior placement: collection, shard,
-generation, and epoch.
+A local registry removal happens when the replica manager processes controller
+intent that no longer wants *that exact replica* to serve traffic: after a
+replacement is ready, while draining a node, when deleting a collection, or
+after a failed replica has been declared unavailable. The removal names the
+full prior placement: collection, shard, generation, and epoch.
 
 The exact-match rule is deliberate. Commands can be delayed or duplicated. If
 an old "remove epoch 20" command reaches a node after that node has installed
@@ -71,17 +82,23 @@ remove the new replica.
 ```mermaid
 sequenceDiagram
     participant CTL as Controller (future)
-    participant A as DataNode A registry
-    participant B as DataNode B registry
+    participant A as DataNode A
+    participant B as DataNode B replica manager
+    participant R as DataNode B registry
+    participant O as Object store
     participant Q as QueryNode
 
     Note over CTL: Move products / shard 3 from A to B
-    CTL->>B: Install placement: generation 7, epoch 21
-    Note over B: LocalShard is READY; registry marks it active
+    CTL->>B: Prepare placement: generation 7, epoch 21, manifest URI
+    B->>O: Fetch and verify shard artifacts
+    O-->>B: Immutable generation bytes
+    Note over B: Restore RocksDB; load or rebuild FAISS
+    B->>R: Install already-READY LocalShard
+    B-->>CTL: Placement READY
     CTL->>Q: Publish route to B, epoch 21
     Q->>B: SearchShard(products, 3, generation 7, epoch 21)
     B-->>Q: Search result
-    CTL->>A: Remove placement: generation 7, epoch 20
+    CTL->>A: Stop serving placement: generation 7, epoch 20
     Note over A: Removes only if A still has exactly epoch 20
 ```
 

@@ -75,6 +75,12 @@ acknowledgements require explicit crash-window and recovery definitions before
 implementation. Generation artifacts are immutable, checksummed, verified
 before activation, and switched atomically.
 
+In clustered mode, DataNodes fetch immutable logical-shard generation artifacts
+directly from the configured object store. The controller distributes placement
+intent and manifest identity, not vector bytes. Source partitions remain
+ingestion lineage rather than placement or query-routing units. See
+[Design 0004: Object-store generation bootstrap and replica recovery](designs/0004-object-store-generation-recovery.md).
+
 ## Deployment model
 
 Standalone mode runs without Kubernetes, Istio, Kafka, Airflow, or a separate

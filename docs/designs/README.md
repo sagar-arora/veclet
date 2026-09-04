@@ -23,6 +23,7 @@ reconsidered casually.
 | --- | --- | --- |
 | [0001: Cloud-neutral small-cluster deployment](0001-cloud-neutral-small-cluster-deployment.md) | Draft | Managed cloud, existing-host, and manual deployment modes; six-node placement and networking |
 | [0002: DataNode shard placement registry and RPC fencing](0002-data-node-shard-registry.md) | Draft | Monotonic local placement installation, exact removal, and lifetime-safe RPC lookup |
+| [0004: Object-store generation bootstrap and replica recovery](0004-object-store-generation-recovery.md) | Draft | Immutable artifact layout, direct DataNode recovery, fencing, and failure boundaries |
 
 Each new design should state intended behavior, non-goals, user configuration,
 component ownership, state transitions, failure handling, security,

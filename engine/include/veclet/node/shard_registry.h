@@ -46,9 +46,10 @@ public:
   ShardRegistry(ShardRegistry &&) = delete;
   ShardRegistry &operator=(ShardRegistry &&) = delete;
 
-  // Install places a READY LocalShard on this DataNode. Repeating the exact
-  // placement with the same LocalShard is idempotent. A replacement requires
-  // a strictly newer placement epoch and may not move generation backward.
+  // Install publishes an already-READY LocalShard on this DataNode. It performs
+  // no recovery or remote I/O. Repeating the exact placement with the same
+  // LocalShard is idempotent. A replacement requires a strictly newer
+  // placement epoch and may not move generation backward.
   void Install(const veclet::v1::ShardPlacement &placement,
                std::shared_ptr<shard::LocalShard> shard);
 

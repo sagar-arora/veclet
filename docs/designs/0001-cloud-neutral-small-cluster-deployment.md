@@ -215,7 +215,7 @@ placement transition is:
 | State | Routable | Meaning |
 | --- | --- | --- |
 | `PLANNED` | no | Controller selected a node and issued a newer placement epoch |
-| `RECOVERING` | no | DataNode is creating or copying authoritative state and preparing FAISS |
+| `RECOVERING` | no | DataNode is fetching or creating authoritative state and preparing FAISS |
 | `READY` | yes | Required state and artifacts were verified for the exact placement |
 | `DRAINING` | no for new work | Existing bounded work is finishing while replacement safety is established |
 | `REVOKED` | no | The placement can no longer accept work |
@@ -227,7 +227,11 @@ draining replica until replication safety is restored.
 If a node stops heartbeating, the controller first marks it suspect, then
 unavailable after the configured failure policy. Searches may use remaining
 READY replicas. A replacement receives a newer placement epoch and remains
-outside routing until recovery completes.
+outside routing until recovery completes. For immutable imported generations,
+the replacement fetches its exact logical-shard artifacts directly from the
+configured object store; the controller sends manifest identity but never
+proxies vector bytes. The recovery state machine and object layout are defined
+in [Design 0004](0004-object-store-generation-recovery.md).
 
 ## Replication boundary
 
