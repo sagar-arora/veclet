@@ -25,6 +25,7 @@ reconsidered casually.
 | [0002: DataNode shard placement registry and RPC fencing](0002-data-node-shard-registry.md) | Draft | Monotonic local placement installation, exact removal, and lifetime-safe RPC lookup |
 | [0003: Standalone DataNode process](0003-standalone-data-node.md) | Implemented | One-shard process configuration, recovery, gRPC health, and graceful lifecycle |
 | [0004: Object-store generation bootstrap and replica recovery](0004-object-store-generation-recovery.md) | Draft | Immutable artifact layout, direct DataNode recovery, fencing, and failure boundaries |
+| [0005: Shard placement lifecycle and recovery](0005-shard-placement-lifecycle.md) | Draft | Controller and DataNode phases, failure windows, retry ownership, fencing, and drain |
 
 Each new design should state intended behavior, non-goals, user configuration,
 component ownership, state transitions, failure handling, security,
