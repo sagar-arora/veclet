@@ -5,7 +5,7 @@
       "name": "cpp",
       "displayName": "Veclet C++ development",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/cpp",
+      "binaryDir": "${sourceDir}/build/engine",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",

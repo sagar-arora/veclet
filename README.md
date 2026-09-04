@@ -48,7 +48,7 @@ foundation checks require only Git, GNU Make, and Bash; see
 | --- | --- |
 | `api/proto/` | Versioned protobuf and gRPC contracts |
 | `control/` | Go controller and cluster metadata |
-| `cpp/` | C++ QueryNode, DataNode, FAISS, and RocksDB code |
+| `engine/` | Native QueryNode, DataNode, FAISS, and RocksDB engine |
 | `ingest/` | Optional Go ingestion integrations |
 | `deploy/` | Standalone and Kubernetes deployment assets |
 | `tests/` | Cross-component integration and reliability tests |

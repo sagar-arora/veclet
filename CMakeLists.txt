@@ -45,4 +45,4 @@ configure_file(cmake/buf.gen.cpp.yaml.in
                @ONLY)
 
 enable_testing()
-add_subdirectory(cpp)
+add_subdirectory(engine)

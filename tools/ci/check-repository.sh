@@ -11,7 +11,7 @@ required_files=(
   README.md
   api/proto/AGENTS.md
   control/AGENTS.md
-  cpp/AGENTS.md
+  engine/AGENTS.md
   deploy/AGENTS.md
   ingest/AGENTS.md
   tests/AGENTS.md

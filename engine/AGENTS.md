@@ -1,6 +1,6 @@
 # C++ data-plane review instructions
 
-These instructions apply to `cpp/` and C++ executables and extend the repository instructions.
+These instructions apply to `engine/` and C++ executables and extend the repository instructions.
 
 ## Language and ownership
 

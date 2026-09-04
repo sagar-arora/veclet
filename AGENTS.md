@@ -58,7 +58,7 @@ Before recommending merge, evaluate every applicable lane independently:
 - distributed systems: all RPC, state, concurrency, routing, placement, replication, snapshot, recovery, and lifecycle changes;
 - protobuf/API: changes under `api/proto/` or behavior visible across process boundaries;
 - Go: changes under `control/` or `ingest/`;
-- C++: changes under `cpp/` or C++ executables;
+- C++: changes under `engine/` or C++ executables;
 - tests/reliability: failure claims, concurrency, recovery, or nondeterministic behavior;
 - operations/security: deployment, credentials, identity, networking policy, images, or resource lifecycle.
 

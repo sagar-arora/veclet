@@ -38,7 +38,7 @@ export VCPKG_ROOT="$PWD/.cache/vcpkg"
 ```
 
 The checkout is local tooling and remains ignored. `make check-cpp` installs
-the manifest into `build/cpp/vcpkg_installed`, generates bindings with the
+the manifest into `build/engine/vcpkg_installed`, generates bindings with the
 vcpkg-provided protoc and gRPC plugin, builds with Ninja, and runs CTest.
 
 FAISS requires OpenMP. Apple Clang does not ship its runtime, so macOS arm64

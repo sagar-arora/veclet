@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - api/proto/**
-      - cpp/**
+      - engine/**
       - tools/toolchain/**
       - .github/workflows/languages.yml
       - buf.gen.go.yaml
@@ -20,7 +20,7 @@ on:
       - main
     paths:
       - api/proto/**
-      - cpp/**
+      - engine/**
       - tools/toolchain/**
       - .github/workflows/languages.yml
       - buf.gen.go.yaml
