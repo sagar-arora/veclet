@@ -34,11 +34,20 @@ public:
   grpc::Status SearchShard(grpc::ServerContext *context,
                            const veclet::v1::SearchShardRequest *request,
                            veclet::v1::SearchShardResponse *response) override;
+  grpc::Status BatchInsert(grpc::ServerContext *context,
+                           const veclet::v1::BatchInsertRequest *request,
+                           veclet::v1::BatchInsertResponse *response) override;
 
 private:
+  grpc::Status
+  LookupActivePlacement(const veclet::v1::ShardPlacement &requested,
+                        ShardRegistry::PlacementHandle *placement) const;
   grpc::Status SearchShardImpl(grpc::ServerContext *context,
                                const veclet::v1::SearchShardRequest *request,
                                veclet::v1::SearchShardResponse *response);
+  grpc::Status BatchInsertImpl(grpc::ServerContext *context,
+                               const veclet::v1::BatchInsertRequest *request,
+                               veclet::v1::BatchInsertResponse *response);
 
   ShardRegistry registry_;
 };

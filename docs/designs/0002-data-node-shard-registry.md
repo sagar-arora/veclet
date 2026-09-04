@@ -11,10 +11,9 @@ logical-shard identity to one READY `LocalShard`, immutable generation ID, and
 controller-issued placement epoch.
 
 The controller placement stream is the only future writer of this registry.
-`SearchShard` looks up and validates placements but cannot create, advance, or
-replace them. `BatchInsert` will use the same boundary when it is implemented.
-The current in-process API is a bootstrap and test boundary until that
-authenticated channel exists.
+`SearchShard` and `BatchInsert` look up and validate placements but cannot
+create, advance, or replace them. The current in-process API is a bootstrap and
+test boundary until that authenticated channel exists.
 
 ## Terms and concrete lifecycle
 
@@ -150,15 +149,59 @@ Unexpected FAISS or RocksDB failures return `INTERNAL`. Invalid query data
 returns `INVALID_ARGUMENT`. A successful response echoes the registry's exact
 placement rather than trusting a separately constructed response value.
 
+## `BatchInsert` behavior
+
+`BatchInsert` is the internal insert-only write path to one DataNode replica.
+The request names one exact `ShardPlacement`; a caller cannot promote itself by
+presenting a larger placement epoch. The handler proceeds in this order:
+
+1. Reject cancellation, an encoded request over 4 MiB, a missing placement,
+   non-positive generation or placement epoch, an empty batch, or more than 256
+   records.
+2. Look up `(collection_id, shard_id)` and require the exact active placement.
+3. Copy the bounded protobuf records into a contiguous local batch, then recheck
+   cancellation and placement activity immediately before mutation.
+4. Ask `LocalShard` to validate every record and apply the batch. Any invalid or
+   conflicting record prevents the RocksDB transaction from committing.
+5. After RocksDB and the derived FAISS update complete, recheck cancellation and
+   placement activity before acknowledging success.
+6. Verify that inserted plus duplicate counts equal the request size, then echo
+   the registry's placement and counts.
+
+An exact replay returns `OK` with every existing identical record counted in
+`duplicate_records`. A different version, embedding, or payload for an existing
+vector ID returns `FAILED_PRECONDITION`. Invalid record fields or duplicate IDs
+inside the request return `INVALID_ARGUMENT`; the encoded-request and upper
+batch bounds return `RESOURCE_EXHAUSTED`. Unexpected RocksDB or FAISS failures
+return `INTERNAL` with placement context.
+
+The mutation outcome table is:
+
+| Event | Durable local result | RPC result |
+| --- | --- | --- |
+| cancelled or revoked before `LocalShard::PutBatch` | no new records | `CANCELLED` or `FAILED_PRECONDITION` |
+| record validation or insert-only conflict | no new records from the batch | `INVALID_ARGUMENT` or `FAILED_PRECONDITION` |
+| RocksDB transaction setup or staging fails before commit begins | no partial batch write | `INTERNAL` |
+| RocksDB commit reports an ambiguous failure | batch may already be durable | `INTERNAL`; exact retry is safe |
+| RocksDB and FAISS complete while placement stays active | complete local batch | `OK` with inserted and duplicate counts |
+| RocksDB commits but FAISS update fails | complete authoritative batch; derived index fails closed | `INTERNAL`; restart rebuilds FAISS |
+| cancellation or revocation wins after local mutation starts | batch may already be durable | no success acknowledgement; exact retry is safe |
+
+The last row is deliberately not described as rollback. RocksDB is authoritative
+and a placement flag cannot cancel a transaction that is already committing.
+Normal controller-driven replacement must therefore drain bounded in-flight
+writes before removing a placement. Replicating or catching up those writes on a
+replacement node belongs to the separate replication protocol.
+
 ## Failure boundary
 
-Revocation prevents new local RPCs from acquiring an old registry entry and lets
-completed searches be discarded before acknowledgement. It does not by itself
-stop a mutation already executing inside RocksDB, revoke a node isolated from
-the controller, or provide replicated write fencing. Normal placement changes
-must drain bounded in-flight work. Forced failover, leases, write replication,
-and catch-up require the separate replication design described as out of scope
-by Design 0001.
+Revocation prevents new local RPCs from acquiring an old registry entry and
+lets completed searches or writes be rejected before acknowledgement. It does
+not by itself stop a mutation already executing inside RocksDB, revoke a node
+isolated from the controller, or provide replicated write fencing. Normal
+placement changes must drain bounded in-flight work. Forced failover, leases,
+write replication, and catch-up require the separate replication design
+described as out of scope by Design 0001.
 
 ## Acceptance criteria
 
@@ -172,3 +215,7 @@ by Design 0001.
   gRPC status categories.
 - A placement replacement during search prevents the old result from being
   acknowledged.
+- `BatchInsert` validates the complete bounded batch before durable mutation,
+  reports exact retries, and maps conflicts without partial writes.
+- Cancellation or placement replacement prevents a successful write
+  acknowledgement, including when the local batch has already committed.
