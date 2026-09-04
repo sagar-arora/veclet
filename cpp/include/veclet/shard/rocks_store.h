@@ -8,7 +8,9 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace rocksdb {
 class ColumnFamilyHandle;
@@ -24,6 +26,14 @@ public:
     bool inserted{false};
   };
 
+  struct PutBatchResult {
+    // record_results preserves input order. Newly inserted records have
+    // inserted=true; exact replays return their existing local label.
+    std::vector<PutResult> record_results;
+    size_t inserted_records{0};
+    size_t duplicate_records{0};
+  };
+
   explicit RocksStore(const std::string &db_path);
   ~RocksStore();
 
@@ -35,10 +45,14 @@ public:
 
   const std::string &db_path() const { return db_path_; }
 
-  // RocksStore is safe for concurrent calls. Put atomically allocates the
-  // positive local label and writes both mappings. An exact replay returns the
-  // original label; a conflicting insert is rejected.
+  // RocksStore is safe for concurrent calls. Put delegates to PutBatch.
   PutResult Put(const veclet::v1::VectorRecord &record);
+
+  // PutBatch validates 1 to 256 unique vector IDs, then uses one durable
+  // RocksDB transaction for every new record, both mappings, and one counter
+  // advance. Exact replays retain their labels. Any conflict aborts the whole
+  // batch before commit.
+  PutBatchResult PutBatch(std::span<const veclet::v1::VectorRecord> records);
   bool Get(const std::string &vector_id,
            veclet::storage::v1::StoredRecord *stored_record) const;
   bool GetVectorIdByLocalIndexId(int64_t local_index_id,

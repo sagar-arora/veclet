@@ -82,6 +82,55 @@ TEST(LocalShardTest, InsertGetAndSearch) {
   EXPECT_LT(result.hits[0].score, result.hits[1].score);
 }
 
+TEST(LocalShardTest, BatchInsertIsAtomicAndExactRetryIsIdempotent) {
+  testing::TempDirectory temp_directory;
+  auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
+  LocalShard shard(temp_directory.path(), std::move(index));
+  const std::vector<veclet::v1::VectorRecord> records = {
+      MakeRecord("v1", 1.0f, 0.0f), MakeRecord("v2", 0.0f, 1.0f)};
+
+  const ShardPutBatchResult inserted = shard.PutBatch(records);
+  EXPECT_EQ(inserted.inserted_records, 2);
+  EXPECT_EQ(inserted.duplicate_records, 0);
+  EXPECT_EQ(shard.size(), 2);
+
+  const ShardPutBatchResult replay = shard.PutBatch(records);
+  EXPECT_EQ(replay.inserted_records, 0);
+  EXPECT_EQ(replay.duplicate_records, 2);
+  EXPECT_EQ(shard.size(), 2);
+
+  const std::vector<veclet::v1::VectorRecord> mixed = {
+      records[0], MakeRecord("v3", -1.0f, 0.0f)};
+  const ShardPutBatchResult mixed_result = shard.PutBatch(mixed);
+  EXPECT_EQ(mixed_result.inserted_records, 1);
+  EXPECT_EQ(mixed_result.duplicate_records, 1);
+  EXPECT_EQ(shard.size(), 3);
+
+  const ShardSearchResult result =
+      shard.Search(std::vector<float>{-0.9f, 0.0f}, 1);
+  ASSERT_EQ(result.hits.size(), 1);
+  EXPECT_EQ(result.hits[0].record.vector_id(), "v3");
+}
+
+TEST(LocalShardTest, BatchConflictLeavesRocksAndFaissUnchanged) {
+  testing::TempDirectory temp_directory;
+  auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
+  LocalShard shard(temp_directory.path(), std::move(index));
+  veclet::v1::VectorRecord existing = MakeRecord("z-existing", 1.0f, 0.0f);
+  shard.Put(existing);
+
+  existing.set_version(2);
+  const std::vector<veclet::v1::VectorRecord> records = {
+      MakeRecord("a-new", 0.0f, 1.0f), existing};
+  EXPECT_THROW(shard.PutBatch(records), std::domain_error);
+  EXPECT_FALSE(shard.Get("a-new", nullptr));
+  EXPECT_EQ(shard.size(), 1);
+  const ShardSearchResult result =
+      shard.Search(std::vector<float>{0.0f, 1.0f}, 10);
+  ASSERT_EQ(result.hits.size(), 1);
+  EXPECT_EQ(result.hits[0].record.vector_id(), "z-existing");
+}
+
 TEST(LocalShardTest, ExactReplayIsIdempotentAndConflictIsRejected) {
   testing::TempDirectory temp_directory;
   auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
@@ -119,31 +168,58 @@ TEST(LocalShardTest, RecoveryRebuildsDerivedIndexAndMappings) {
 
 TEST(LocalShardTest, FailedDerivedUpdateFailsClosedUntilRestartRecovery) {
   testing::TempDirectory temp_directory;
-  const veclet::v1::VectorRecord record = MakeRecord("committed", 1.0f, 0.0f);
+  const std::vector<veclet::v1::VectorRecord> records = {
+      MakeRecord("committed-1", 1.0f, 0.0f),
+      MakeRecord("committed-2", 0.0f, 1.0f)};
   {
     LocalShard shard(temp_directory.path(),
                      std::make_unique<FailFirstAddIndex>());
-    EXPECT_THROW(shard.Put(record), std::runtime_error);
-    EXPECT_EQ(shard.size(), 1);
-    EXPECT_TRUE(shard.Get("committed", nullptr));
+    EXPECT_THROW(shard.PutBatch(records), std::runtime_error);
+    EXPECT_EQ(shard.size(), 2);
+    EXPECT_TRUE(shard.Get("committed-1", nullptr));
+    EXPECT_TRUE(shard.Get("committed-2", nullptr));
     EXPECT_THROW(shard.Search(std::vector<float>{1.0f, 0.0f}, 1),
                  std::runtime_error);
-    EXPECT_THROW(shard.Put(record), std::runtime_error);
+    EXPECT_THROW(shard.PutBatch(records), std::runtime_error);
     EXPECT_THROW(shard.Put(MakeRecord("not-committed", 0.0f, 1.0f)),
                  std::runtime_error);
     EXPECT_FALSE(shard.Get("not-committed", nullptr));
-    EXPECT_EQ(shard.size(), 1);
+    EXPECT_EQ(shard.size(), 2);
   }
   {
     auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
     LocalShard recovered(temp_directory.path(), std::move(index));
     const ShardSearchResult result =
-        recovered.Search(std::vector<float>{1.0f, 0.0f}, 1);
-    ASSERT_EQ(result.hits.size(), 1);
-    EXPECT_EQ(result.hits[0].record.vector_id(), "committed");
-    recovered.Put(record);
-    EXPECT_EQ(recovered.size(), 1);
+        recovered.Search(std::vector<float>{1.0f, 0.0f}, 2);
+    ASSERT_EQ(result.hits.size(), 2);
+    EXPECT_EQ(result.hits[0].record.vector_id(), "committed-1");
+    const ShardPutBatchResult replay = recovered.PutBatch(records);
+    EXPECT_EQ(replay.inserted_records, 0);
+    EXPECT_EQ(replay.duplicate_records, 2);
+    EXPECT_EQ(recovered.size(), 2);
   }
+}
+
+TEST(LocalShardTest, RejectsInvalidBatchBeforeWritingAnyRecord) {
+  testing::TempDirectory temp_directory;
+  auto index = std::make_unique<index::FlatIndex>(2, index::MetricType::kL2);
+  LocalShard shard(temp_directory.path(), std::move(index));
+
+  const std::vector<veclet::v1::VectorRecord> empty;
+  EXPECT_THROW(shard.PutBatch(empty), std::invalid_argument);
+
+  const std::vector<veclet::v1::VectorRecord> duplicate_ids = {
+      MakeRecord("duplicate", 1.0f, 0.0f), MakeRecord("duplicate", 0.0f, 1.0f)};
+  EXPECT_THROW(shard.PutBatch(duplicate_ids), std::invalid_argument);
+
+  veclet::v1::VectorRecord invalid = MakeRecord("invalid", 1.0f, 0.0f);
+  invalid.clear_embedding();
+  invalid.add_embedding(1.0f);
+  const std::vector<veclet::v1::VectorRecord> invalid_later = {
+      MakeRecord("valid", 1.0f, 0.0f), invalid};
+  EXPECT_THROW(shard.PutBatch(invalid_later), std::invalid_argument);
+  EXPECT_FALSE(shard.Get("valid", nullptr));
+  EXPECT_EQ(shard.size(), 0);
 }
 
 TEST(LocalShardTest, EqualScoresUseExternalIdByteOrdering) {

@@ -5,6 +5,7 @@
 #include "veclet/shard/rocks_store.h"
 #include "veclet/v1/common.pb.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <shared_mutex>
@@ -29,6 +30,11 @@ struct ShardSearchResult {
   std::vector<ShardSearchHit> hits;
 };
 
+struct ShardPutBatchResult {
+  size_t inserted_records{0};
+  size_t duplicate_records{0};
+};
+
 class LocalShard {
 public:
   LocalShard(const std::string &db_path,
@@ -41,14 +47,16 @@ public:
   LocalShard(LocalShard &&) = delete;
   LocalShard &operator=(LocalShard &&) = delete;
 
-  // LocalShard supports concurrent Put, Get, and Search calls. RocksDB work is
-  // never performed while index_mutex_ is held. FAISS mutations take the
-  // exclusive lock; searches take the shared lock.
+  // LocalShard supports concurrent Put, PutBatch, Get, and Search calls.
+  // RocksDB work is never performed while index_mutex_ is held. FAISS
+  // mutations take the exclusive lock; searches take the shared lock.
   int dimension() const { return index_->dimension(); }
   index::MetricType metric() const { return index_->metric(); }
   int64_t size() const;
 
   void Put(const veclet::v1::VectorRecord &user_record);
+  ShardPutBatchResult
+  PutBatch(std::span<const veclet::v1::VectorRecord> records);
   bool Get(const std::string &vector_id,
            veclet::v1::VectorRecord *record) const;
   ShardSearchResult Search(std::span<const float> query, int k) const;

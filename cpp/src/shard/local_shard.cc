@@ -125,7 +125,22 @@ void LocalShard::RecoverDerivedIndex() {
 }
 
 void LocalShard::Put(const veclet::v1::VectorRecord &user_record) {
-  ValidateRecordForIndex(user_record, index_->dimension(), index_->metric());
+  (void)PutBatch(std::span<const veclet::v1::VectorRecord>(&user_record, 1));
+}
+
+ShardPutBatchResult
+LocalShard::PutBatch(std::span<const veclet::v1::VectorRecord> records) {
+  constexpr size_t kMaxBatchRecords = 256;
+  if (records.empty() || records.size() > kMaxBatchRecords) {
+    throw std::invalid_argument("batch must contain 1 to 256 records");
+  }
+  const size_t dimension = static_cast<size_t>(index_->dimension());
+  if (records.size() > std::numeric_limits<size_t>::max() / dimension) {
+    throw std::overflow_error("batch embedding size exceeds size_t range");
+  }
+  for (const veclet::v1::VectorRecord &record : records) {
+    ValidateRecordForIndex(record, index_->dimension(), index_->metric());
+  }
   if (!index_->is_trained()) {
     throw std::runtime_error(
         "LocalIndex must be trained before accepting inserts");
@@ -138,30 +153,51 @@ void LocalShard::Put(const veclet::v1::VectorRecord &user_record) {
     }
   }
 
-  const RocksStore::PutResult put_result = rocks_store_.Put(user_record);
+  std::vector<int64_t> local_ids;
+  std::vector<int64_t> missing_ids;
+  std::vector<float> missing_vectors;
+  local_ids.reserve(records.size());
+  missing_ids.reserve(records.size());
+  missing_vectors.reserve(records.size() * dimension);
+
+  const RocksStore::PutBatchResult put_result = rocks_store_.PutBatch(records);
+  for (const RocksStore::PutResult &record_result : put_result.record_results) {
+    local_ids.push_back(record_result.stored_record.local_index_id());
+  }
 
   std::unique_lock lock(index_mutex_);
   if (!derived_index_healthy_) {
     throw std::runtime_error(
         "Derived FAISS index is unavailable; restart is required for recovery");
   }
-  const int64_t local_id = put_result.stored_record.local_index_id();
-  if (indexed_ids_.contains(local_id)) {
-    return;
+  for (size_t i = 0; i < local_ids.size(); ++i) {
+    if (!indexed_ids_.contains(local_ids[i])) {
+      missing_ids.push_back(local_ids[i]);
+      const auto &embedding = records[i].embedding();
+      missing_vectors.insert(missing_vectors.end(), embedding.begin(),
+                             embedding.end());
+    }
+  }
+  if (missing_ids.empty()) {
+    return {.inserted_records = put_result.inserted_records,
+            .duplicate_records = put_result.duplicate_records};
   }
 
-  const auto &embedding = put_result.stored_record.record().embedding();
-  const std::vector<int64_t> ids = {local_id};
   try {
-    index_->Add(ids,
-                std::span<const float>(embedding.data(), embedding.size()));
-    indexed_ids_.insert(local_id);
+    if (missing_ids.size() > indexed_ids_.max_size() - indexed_ids_.size()) {
+      throw std::overflow_error("indexed local-ID set exceeds size range");
+    }
+    indexed_ids_.reserve(indexed_ids_.size() + missing_ids.size());
+    index_->Add(missing_ids, missing_vectors);
+    indexed_ids_.insert(missing_ids.begin(), missing_ids.end());
   } catch (...) {
     derived_index_healthy_ = false;
     std::throw_with_nested(std::runtime_error(
-        "RocksDB insert committed but derived FAISS update failed; restart is "
+        "RocksDB batch committed but derived FAISS update failed; restart is "
         "required for recovery"));
   }
+  return {.inserted_records = put_result.inserted_records,
+          .duplicate_records = put_result.duplicate_records};
 }
 
 bool LocalShard::Get(const std::string &vector_id,

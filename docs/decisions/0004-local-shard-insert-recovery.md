@@ -11,32 +11,37 @@ so an insert cannot be treated as one atomic mutation across both systems.
 
 ## Decision
 
-`LocalShard::Put` is insert-only. It first validates the complete record, then
-uses one RocksDB transaction to allocate a positive local index ID, write the
-external-ID record, write the reverse local-ID mapping, and advance the local-ID
-counter. Only after that durable commit does it add the vector to FAISS.
+`LocalShard::Put` and `LocalShard::PutBatch` are insert-only. A batch contains
+1–256 records with unique external IDs. The complete batch is validated before
+storage changes. One RocksDB transaction allocates positive local index IDs,
+writes every new external-ID record and reverse local-ID mapping, and advances
+the local-ID counter once. Only after that durable commit does one FAISS `Add`
+call install every label that is not already present in the derived index.
 
-Exact retries return the original local ID and do not create another record or
-FAISS label. Reusing an external ID with different record content is rejected.
-Deletes, updates, and tombstones remain unsupported in v1.
+Exact retries return the original local IDs and do not create another record or
+FAISS label. A retry also finishes a missing derived-index update if another
+attempt committed RocksDB but did not install its FAISS label. Reusing any
+external ID with different record content rejects the entire batch. Deletes,
+updates, and tombstones remain unsupported in v1.
 
 The write state machine is:
 
 | State | Durable authority | Externally visible behavior | Next action |
 | --- | --- | --- | --- |
-| validated | no new record | no acknowledgement | begin RocksDB transaction |
-| RocksDB committed | record and both mappings | no acknowledgement yet | add the vector to FAISS |
-| indexed | same durable record | acknowledge success | exact retries are no-ops |
-| derived index unhealthy | durable record may exist | fail search and insert closed | restart and rebuild from RocksDB |
+| validated | no new records | no acknowledgement | begin RocksDB transaction |
+| RocksDB committed | all new records and both mappings | no acknowledgement yet | add every missing label to FAISS in one call |
+| indexed | same durable records | acknowledge batch counts | exact retries verify that every label is present |
+| derived index unhealthy | all committed records remain durable | fail search and insert closed | restart and rebuild from RocksDB |
 
 The crash and failure model is:
 
 | Window | Result | Recovery |
 | --- | --- | --- |
-| before RocksDB commit | no partial record or counter advance | retry the insert |
-| after RocksDB commit, before FAISS add | authoritative record exists without a searchable label | restart rebuilds FAISS from every RocksDB record |
+| validation or conflict rejection | no batch record or counter change | correct the batch or retry exact records |
+| before RocksDB commit | no partial batch record or counter advance | retry the complete batch |
+| after RocksDB commit, before FAISS add | every authoritative batch record exists without some searchable labels | an in-process exact retry finishes missing labels; restart rebuilds FAISS from every RocksDB record |
 | FAISS add throws | mutation outcome may be ambiguous | mark the derived index unhealthy and restart; do not serve potentially partial search results |
-| acknowledgement is lost | record and FAISS label exist | exact retry resolves the existing record and is a no-op |
+| acknowledgement is lost | records and FAISS labels exist | exact retry resolves the existing records without duplicate labels |
 
 Recovery starts with an empty, already-trained index, validates every record and
 reverse mapping, and rebuilds FAISS in batches bounded to at most 1,024 vectors
@@ -48,13 +53,15 @@ publishing the shard as READY until construction and recovery finish.
 
 `LocalShard` serializes FAISS mutation with an exclusive lock and permits
 concurrent searches with a shared lock. RocksDB calls happen outside that lock.
-RocksDB transactions have bounded lock and expiration times and are not retried
-inside the storage layer; callers retry only the idempotent insert operation.
+Record keys are locked in external-ID byte order so overlapping batches use a
+stable lock order. RocksDB transactions have bounded lock and expiration times
+and are not retried inside the storage layer; callers retry only the idempotent
+insert operation.
 
 ## Consequences
 
-A committed insert can return an error when its derived FAISS update fails. The
-record remains authoritative and becomes searchable after restart recovery.
+A committed batch can return an error when its derived FAISS update fails. All
+records remain authoritative and become searchable after restart recovery.
 Failing closed sacrifices temporary availability but avoids silent partial
 search results or guessing whether a FAISS mutation partially completed.
 

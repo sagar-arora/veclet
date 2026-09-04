@@ -10,12 +10,15 @@
 #include <rocksdb/utilities/transaction.h>
 #include <rocksdb/utilities/transaction_db.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -200,19 +203,58 @@ void RocksStore::InitializeMetadata() {
 }
 
 RocksStore::PutResult RocksStore::Put(const veclet::v1::VectorRecord &record) {
-  ValidateRecordEnvelope(record);
+  PutBatchResult batch_result =
+      PutBatch(std::span<const veclet::v1::VectorRecord>(&record, 1));
+  return std::move(batch_result.record_results.front());
+}
+
+RocksStore::PutBatchResult
+RocksStore::PutBatch(std::span<const veclet::v1::VectorRecord> records) {
+  constexpr size_t kMaxBatchRecords = 256;
+  if (records.empty() || records.size() > kMaxBatchRecords) {
+    throw std::invalid_argument("batch must contain 1 to 256 records");
+  }
+
+  std::unordered_set<std::string_view> vector_ids;
+  vector_ids.reserve(records.size());
+  std::vector<size_t> ordered_indexes;
+  ordered_indexes.reserve(records.size());
+  for (size_t i = 0; i < records.size(); ++i) {
+    ValidateRecordEnvelope(records[i]);
+    if (!vector_ids.insert(records[i].vector_id()).second) {
+      throw std::invalid_argument("batch vector_id values must be unique: " +
+                                  records[i].vector_id());
+    }
+    ordered_indexes.push_back(i);
+  }
+  std::sort(ordered_indexes.begin(), ordered_indexes.end(),
+            [records](size_t lhs, size_t rhs) {
+              return records[lhs].vector_id() < records[rhs].vector_id();
+            });
 
   std::unique_ptr<rocksdb::Transaction> transaction =
       BeginTransaction(db_.get());
   rocksdb::ReadOptions read_options;
-  std::string existing_value;
-  const rocksdb::Status existing_status = transaction->GetForUpdate(
-      read_options, records_cf_, record.vector_id(), &existing_value);
-  if (existing_status.ok()) {
-    PutResult result;
-    result.stored_record = ParseStoredRecord(
+  PutBatchResult result;
+  result.record_results.resize(records.size());
+  std::vector<size_t> new_record_indexes;
+  new_record_indexes.reserve(records.size());
+
+  for (const size_t index : ordered_indexes) {
+    const veclet::v1::VectorRecord &record = records[index];
+    std::string existing_value;
+    const rocksdb::Status existing_status = transaction->GetForUpdate(
+        read_options, records_cf_, record.vector_id(), &existing_value);
+    if (existing_status.IsNotFound()) {
+      new_record_indexes.push_back(index);
+      continue;
+    }
+    CheckStatus(existing_status, "RocksDB record read failed");
+
+    PutResult &record_result = result.record_results[index];
+    record_result.stored_record = ParseStoredRecord(
         existing_value, "for vector_id " + record.vector_id());
-    if (!RecordsEqual(result.stored_record.record(), record)) {
+    if (!RecordsEqual(record_result.stored_record.record(), record)) {
       throw std::domain_error("insert-only conflict for existing vector_id " +
                               record.vector_id());
     }
@@ -221,7 +263,7 @@ RocksStore::PutResult RocksStore::Put(const veclet::v1::VectorRecord &record) {
     const rocksdb::Status mapping_status =
         transaction->Get(read_options, index_ids_cf_,
                          EncodeUint64(static_cast<uint64_t>(
-                             result.stored_record.local_index_id())),
+                             record_result.stored_record.local_index_id())),
                          &mapped_vector_id);
     CheckStatus(mapping_status, "RocksDB reverse-mapping read failed");
     if (mapped_vector_id != record.vector_id()) {
@@ -229,10 +271,11 @@ RocksStore::PutResult RocksStore::Put(const veclet::v1::VectorRecord &record) {
           "Corrupt RocksDB reverse mapping for vector_id " +
           record.vector_id());
     }
-    return result;
+    ++result.duplicate_records;
   }
-  if (!existing_status.IsNotFound()) {
-    CheckStatus(existing_status, "RocksDB record read failed");
+
+  if (new_record_indexes.empty()) {
+    return result;
   }
 
   std::string encoded_next_id;
@@ -241,42 +284,52 @@ RocksStore::PutResult RocksStore::Put(const veclet::v1::VectorRecord &record) {
                                         &encoded_next_id),
               "RocksDB local-ID read failed");
   const uint64_t next_id = DecodeUint64(encoded_next_id, "local-ID counter");
-  if (next_id == 0 ||
-      next_id >= static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+  const uint64_t max_id =
+      static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+  if (next_id == 0 || next_id >= max_id ||
+      new_record_indexes.size() > max_id - next_id) {
     throw std::overflow_error("RocksDB local-ID space is exhausted");
   }
 
-  const std::string encoded_local_id = EncodeUint64(next_id);
-  std::string conflicting_vector_id;
-  const rocksdb::Status mapping_status = transaction->GetForUpdate(
-      read_options, index_ids_cf_, encoded_local_id, &conflicting_vector_id);
-  if (!mapping_status.IsNotFound()) {
-    if (mapping_status.ok()) {
-      throw std::runtime_error(
-          "Corrupt RocksDB local-ID counter points to an existing mapping");
+  uint64_t local_id = next_id;
+  for (const size_t index : new_record_indexes) {
+    const veclet::v1::VectorRecord &record = records[index];
+    const std::string encoded_local_id = EncodeUint64(local_id);
+    std::string conflicting_vector_id;
+    const rocksdb::Status mapping_status = transaction->GetForUpdate(
+        read_options, index_ids_cf_, encoded_local_id, &conflicting_vector_id);
+    if (!mapping_status.IsNotFound()) {
+      if (mapping_status.ok()) {
+        throw std::runtime_error(
+            "Corrupt RocksDB local-ID counter points to an existing mapping");
+      }
+      CheckStatus(mapping_status, "RocksDB reverse-mapping read failed");
     }
-    CheckStatus(mapping_status, "RocksDB reverse-mapping read failed");
+
+    PutResult &record_result = result.record_results[index];
+    record_result.inserted = true;
+    record_result.stored_record.set_local_index_id(
+        static_cast<int64_t>(local_id));
+    *record_result.stored_record.mutable_record() = record;
+    std::string serialized;
+    if (!record_result.stored_record.SerializeToString(&serialized)) {
+      throw std::runtime_error("StoredRecord serialization failed");
+    }
+
+    CheckStatus(
+        transaction->Put(records_cf_, record.vector_id(), serialized, true),
+        "RocksDB record write failed");
+    CheckStatus(transaction->Put(index_ids_cf_, encoded_local_id,
+                                 record.vector_id(), true),
+                "RocksDB reverse-mapping write failed");
+    ++result.inserted_records;
+    ++local_id;
   }
 
-  PutResult result;
-  result.inserted = true;
-  result.stored_record.set_local_index_id(static_cast<int64_t>(next_id));
-  *result.stored_record.mutable_record() = record;
-  std::string serialized;
-  if (!result.stored_record.SerializeToString(&serialized)) {
-    throw std::runtime_error("StoredRecord serialization failed");
-  }
-
-  CheckStatus(
-      transaction->Put(records_cf_, record.vector_id(), serialized, true),
-      "RocksDB record write failed");
-  CheckStatus(transaction->Put(index_ids_cf_, encoded_local_id,
-                               record.vector_id(), true),
-              "RocksDB reverse-mapping write failed");
   CheckStatus(transaction->Put(default_cf_, AsSlice(kNextLocalIndexIdKey),
-                               EncodeUint64(next_id + 1), true),
+                               EncodeUint64(local_id), true),
               "RocksDB local-ID advance failed");
-  CheckStatus(transaction->Commit(), "RocksDB record commit failed");
+  CheckStatus(transaction->Commit(), "RocksDB batch commit failed");
   return result;
 }
 
