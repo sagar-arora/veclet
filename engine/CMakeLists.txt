@@ -58,6 +58,7 @@ gtest_discover_tests(veclet_proto_contract_test DISCOVERY_TIMEOUT 30)
 
 find_package(OpenMP REQUIRED)
 find_package(faiss CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(RocksDB CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -98,6 +99,17 @@ target_link_libraries(veclet_shard
                       PUBLIC veclet_proto veclet_index RocksDB::rocksdb)
 target_compile_features(veclet_shard PUBLIC cxx_std_20)
 
+add_library(
+  veclet_artifact STATIC
+  src/artifact/replica_artifact.cc
+  src/artifact/filesystem_replica_loader.cc)
+target_include_directories(
+  veclet_artifact
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+target_link_libraries(veclet_artifact PUBLIC veclet_shard
+                      PRIVATE OpenSSL::Crypto)
+target_compile_features(veclet_artifact PUBLIC cxx_std_20)
+
 add_executable(veclet_rocks_store_test tests/rocks_store_test.cc)
 target_link_libraries(veclet_rocks_store_test
                       PRIVATE veclet_shard GTest::gtest_main)
@@ -128,6 +140,19 @@ target_include_directories(
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
 target_link_libraries(veclet_node PUBLIC veclet_node_registry gRPC::grpc++)
 target_compile_features(veclet_node PUBLIC cxx_std_20)
+
+add_library(veclet_replica_manager STATIC src/node/replica_manager.cc)
+target_include_directories(
+  veclet_replica_manager
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+target_link_libraries(veclet_replica_manager
+                      PUBLIC veclet_node veclet_artifact)
+target_compile_features(veclet_replica_manager PUBLIC cxx_std_20)
+
+add_executable(veclet_replica_manager_test tests/replica_manager_test.cc)
+target_link_libraries(veclet_replica_manager_test
+                      PRIVATE veclet_replica_manager GTest::gtest_main)
+gtest_discover_tests(veclet_replica_manager_test DISCOVERY_TIMEOUT 30)
 
 add_executable(veclet_data_node_test tests/data_node_test.cc)
 target_link_libraries(veclet_data_node_test

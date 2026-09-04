@@ -105,6 +105,9 @@ It is bounded in size and validated before any artifact is downloaded.
 The future controller-to-DataNode control stream sends a **prepare placement**
 intent containing the exact `ShardPlacement` and a generation-manifest URI.
 This is not `ShardRegistry::Install` and is not a public client RPC.
+The complete controller and DataNode lifecycle, including READY reporting,
+retry ownership, replacement, and drain, is specified in
+[Design 0005](0005-shard-placement-lifecycle.md).
 
 ```mermaid
 sequenceDiagram
@@ -161,6 +164,30 @@ Installing the local registry entry is the last DataNode-local activation step.
 Reporting READY to the controller happens after installation. If READY is lost,
 the DataNode reports the same verified artifact identity again. The controller
 publishes routing idempotently and only for the currently desired placement.
+
+### First implementation slice
+
+The initial C++ slice deliberately implements only the DataNode-local recovery
+boundary. It accepts an already parsed `ShardArtifactManifest`, supports direct
+files under `rocksdb/` from a configured filesystem source root, enforces
+bounded file counts and byte sizes, and verifies lowercase SHA-256 digests using
+the pinned OpenSSL dependency. Serialized manifest parsing and signature or
+publisher verification remain separate work.
+
+Verified bytes are copied through unique directories under `staging/`, flushed,
+and atomically renamed into a manifest-addressed immutable cache. A second
+staged copy becomes the writable live RocksDB replica; HNSW is rebuilt from
+those authoritative records. The loader constructor has exclusive ownership of
+its configured data root and discards staging directories left by a prior
+process. Concurrent loads through that one loader use separate staging paths.
+
+`ReplicaManager` owns the local `RECOVERING`, `READY`, and `FAILED` states. It
+does no filesystem, RocksDB, or FAISS work while holding its mutex. Before
+installation it rechecks that the operation is still desired; a newer epoch,
+exact removal, or caller cancellation fences the attempt. A replacement failure
+leaves any prior READY placement active. The adapter performs no hidden retry;
+the future control-stream caller owns the end-to-end deadline and controller
+retry policy.
 
 ## Failure scenarios
 
